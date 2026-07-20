@@ -9,14 +9,19 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @Transactional
 public class KnowledgeDocumentService {
     
     private final KnowledgeDocumentRepository documentRepository;
+    private final EmbeddingService embeddingService;
     
-    public KnowledgeDocumentService(KnowledgeDocumentRepository documentRepository) {
+    public KnowledgeDocumentService(KnowledgeDocumentRepository documentRepository,
+                                   EmbeddingService embeddingService) {
         this.documentRepository = documentRepository;
+        this.embeddingService = embeddingService;
     }
     
     /**
@@ -42,6 +47,14 @@ public class KnowledgeDocumentService {
                 .build();
         
         KnowledgeDocument saved = documentRepository.save(document);
+        
+        // 阶段 2: 将文档内容进行向量化处理
+        try {
+            embeddingService.embedAndStore(content, "doc_" + saved.getId());
+        } catch (Exception e) {
+            // 向量化失败不影响文档保存，记录日志即可
+            System.err.println("文档向量化失败：" + e.getMessage());
+        }
         
         return toDocumentResponse(saved);
     }
@@ -73,6 +86,14 @@ public class KnowledgeDocumentService {
     }
     
     /**
+     * 语义搜索文档（基于向量相似度）
+     */
+    @Transactional(readOnly = true)
+    public List<EmbeddingService.SearchResult> semanticSearch(String query, int maxResults) {
+        return embeddingService.searchSimilar(query, maxResults);
+    }
+    
+    /**
      * 删除文档
      */
     public void deleteDocument(Long id) {
@@ -80,6 +101,8 @@ public class KnowledgeDocumentService {
             throw new RuntimeException("文档不存在，ID: " + id);
         }
         documentRepository.deleteById(id);
+        // 注意：向量化数据在内存中，暂不处理清理逻辑
+        // 切换到 Milvus 后需要在此处清理对应的向量数据
     }
     
     /**

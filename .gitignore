@@ -1,55 +1,49 @@
 ```
-# Compiled and build artifacts
-*.class
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
-# Dependencies
-node_modules/
-venv/
-.venv/
-__pycache__/
-.mypy_cache/
-.pytest_cache/
+# Java/Maven specific
 target/
-.gradle/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+*.ipr
+*.iws
+out/
 
-# Logs and temp files
-*.log
-*.tmp
+# IDE
+.vscode/
+.idea/
 *.swp
+*.swo
+
+# Logs
+*.log
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Editors
-.vscode/
-.idea/
+# Dependencies
+node_modules/
+**/node_modules/
+lib/
+libs/
 
-# Archives
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
+# Build artifacts
+build/
+dist/
+coverage/
+htmlcov/
+*.pyc
+__pycache__/
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
