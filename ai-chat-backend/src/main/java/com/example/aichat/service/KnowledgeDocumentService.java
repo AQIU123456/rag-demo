@@ -128,6 +128,7 @@ public class KnowledgeDocumentService {
                 .fileType(document.getFileType())
                 .fileSize(document.getFileSize())
                 .wordCount(document.getWordCount())
+                .content(document.getContent())
                 .createdAt(document.getCreatedAt())
                 .updatedAt(document.getUpdatedAt())
                 .build();

@@ -25,6 +25,8 @@ public class DocumentResponse {
     
     private Integer wordCount;
     
+    private String content;
+    
     private LocalDateTime createdAt;
     
     private LocalDateTime updatedAt;

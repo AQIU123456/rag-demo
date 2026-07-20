@@ -214,17 +214,48 @@ export default {
       }
     },
 
-    viewDocument(doc) {
-      this.viewingDoc = doc
+    async viewDocument(doc) {
+      // 如果当前 doc 没有 content 字段，调用详情接口获取完整内容
+      if (!doc.content) {
+        try {
+          const response = await axios.get(`/api/knowledge/documents/${doc.id}`)
+          this.viewingDoc = response.data
+        } catch (error) {
+          console.error('加载文档详情失败:', error)
+          alert('加载文档详情失败，请重试')
+          return
+        }
+      } else {
+        this.viewingDoc = doc
+      }
     },
 
-    editDocument(doc) {
-      this.editingDoc = doc
-      this.formData = {
-        title: doc.title,
-        description: doc.description || '',
-        fileType: doc.fileType,
-        content: doc.content || ''
+    async editDocument(doc) {
+      // 如果当前 doc 没有 content 字段，调用详情接口获取完整内容
+      if (!doc.content) {
+        try {
+          const response = await axios.get(`/api/knowledge/documents/${doc.id}`)
+          const fullDoc = response.data
+          this.editingDoc = fullDoc
+          this.formData = {
+            title: fullDoc.title,
+            description: fullDoc.description || '',
+            fileType: fullDoc.fileType,
+            content: fullDoc.content || ''
+          }
+        } catch (error) {
+          console.error('加载文档内容失败:', error)
+          alert('加载文档内容失败，请重试')
+          return
+        }
+      } else {
+        this.editingDoc = doc
+        this.formData = {
+          title: doc.title,
+          description: doc.description || '',
+          fileType: doc.fileType,
+          content: doc.content || ''
+        }
       }
       this.showUploadModal = true
     },
