@@ -54,6 +54,22 @@
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
+        <!-- LangChain4j Embedding Store - InMemory (用于快速验证) -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- 预留：Milvus 向量数据库支持 (后续切换时使用) -->
+        <!-- 
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-milvus</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        -->
+
         
         <!-- Lombok -->
         <dependency>

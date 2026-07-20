@@ -1,37 +1,49 @@
 ```
-# Java/Maven
+# Java/Maven specific
 target/
 *.class
 *.jar
 *.war
 *.ear
-*.zip
-*.tar
-*.tar.gz
-
-# Dependencies
-node_modules/
+*.iml
+*.ipr
+*.iws
+out/
 
 # IDE
 .vscode/
 .idea/
-*.iml
-*.ipr
-*.iws
+*.swp
+*.swo
+
+# Logs
+*.log
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Logs
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
+# Dependencies
+node_modules/
+**/node_modules/
+lib/
+libs/
 
 # Build artifacts
-dist/
 build/
+dist/
+coverage/
+htmlcov/
+*.pyc
+__pycache__/
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
