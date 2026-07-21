@@ -97,6 +97,41 @@ public class KnowledgeDocumentController {
     }
 
     /**
+     * 阶段 3: 混合搜索 - 结合关键词搜索和语义搜索
+     * GET /api/knowledge/hybrid-search?query=xxx&maxResults=5&keywordWeight=0.4&semanticWeight=0.6
+     */
+    @GetMapping("/hybrid-search")
+    public ResponseEntity<List<KnowledgeDocumentService.HybridSearchResult>> hybridSearch(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "5") int maxResults,
+            @RequestParam(defaultValue = "0.4") double keywordWeight,
+            @RequestParam(defaultValue = "0.6") double semanticWeight) {
+        
+        List<KnowledgeDocumentService.HybridSearchResult> results = 
+            documentService.hybridSearch(query, keywordWeight, semanticWeight, maxResults);
+        return ResponseEntity.ok(results);
+    }
+    
+    /**
+     * 高亮显示搜索结果中的关键词
+     * POST /api/knowledge/highlight
+     */
+    @PostMapping("/highlight")
+    public ResponseEntity<Map<String, String>> highlightKeywords(
+            @RequestBody Map<String, String> request) {
+        
+        String text = request.get("text");
+        String keywords = request.get("keywords");
+        String highlightTag = request.getOrDefault("highlightTag", "<em>");
+        
+        String highlighted = documentService.highlightKeywords(text, keywords, highlightTag);
+        
+        Map<String, String> response = new HashMap<>();
+        response.put("highlightedText", highlighted);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 更新文档
      * PUT /api/knowledge/documents/{id}
      */
