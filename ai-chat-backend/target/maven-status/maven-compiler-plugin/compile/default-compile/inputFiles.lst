@@ -1,0 +1,17 @@
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/controller/ChatController.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/repository/ChatMessageRepository.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/entity/DocumentChunk.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/EmbeddingService.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/entity/ChatMessage.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/ChatService.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/entity/KnowledgeDocument.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/KnowledgeDocumentService.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/controller/KnowledgeDocumentController.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/repository/DocumentChunkRepository.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/AiChatApplication.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/dto/ChatRequest.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/dto/DocumentUploadRequest.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/config/EmbeddingStoreConfig.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/dto/ChatResponse.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/dto/DocumentResponse.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/repository/KnowledgeDocumentRepository.java
