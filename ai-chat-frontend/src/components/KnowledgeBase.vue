@@ -15,8 +15,18 @@
         placeholder="搜索文档标题或内容..."
         class="search-input"
       />
-      <button @click="searchDocuments" class="search-btn">搜索</button>
+      <button @click="searchDocuments" class="search-btn">关键词搜索</button>
+      <button @click="semanticSearch" class="semantic-btn">语义搜索</button>
+      <button @click="hybridSearch" class="hybrid-btn">混合搜索</button>
       <button @click="loadDocuments" class="reset-btn">重置</button>
+    </div>
+
+    <!-- 搜索结果提示 -->
+    <div v-if="searchMode" class="search-mode-indicator">
+      当前搜索模式：<strong>{{ searchMode }}</strong>
+      <span v-if="hybridResults && hybridResults.length > 0">
+        - 找到 {{ hybridResults.length }} 条相关结果
+      </span>
     </div>
 
     <!-- 文档列表 -->
@@ -35,14 +45,20 @@
         @click="viewDocument(doc)"
       >
         <div class="doc-header">
-          <h3 class="doc-title">{{ doc.title }}</h3>
+          <h3 class="doc-title" v-html="highlightText(doc.title)"></h3>
           <span class="doc-type">{{ doc.fileType }}</span>
         </div>
-        <p class="doc-description">{{ doc.description || '无描述' }}</p>
+        <p class="doc-description" v-html="highlightText(doc.description || '无描述')"></p>
         <div class="doc-meta">
           <span>字数：{{ doc.wordCount }}</span>
           <span>大小：{{ formatFileSize(doc.fileSize) }}</span>
           <span>创建：{{ formatDate(doc.createdAt) }}</span>
+        </div>
+        <!-- 混合搜索结果显示匹配类型和分数 -->
+        <div v-if="getHybridResult(doc.id)" class="hybrid-info">
+          <span class="match-type" v-if="getHybridResult(doc.id).matchTypes.includes('keyword')">🔑 关键词</span>
+          <span class="match-type" v-if="getHybridResult(doc.id).matchTypes.includes('semantic')">🧠 语义</span>
+          <span class="score">综合得分：{{ getHybridResult(doc.id).combinedScore.toFixed(3) }}</span>
         </div>
         <div class="doc-actions">
           <button @click.stop="editDocument(doc)" class="action-btn edit">编辑</button>
