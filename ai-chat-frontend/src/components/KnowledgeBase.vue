@@ -160,6 +160,8 @@ export default {
       pageSize: 10,
       searchKeyword: '',
       isSearching: false,
+      searchMode: '', // 当前搜索模式：'keyword', 'semantic', 'hybrid'
+      hybridResults: [], // 混合搜索结果
       showUploadModal: false,
       viewingDoc: null,
       editingDoc: null,
@@ -176,8 +178,11 @@ export default {
     this.loadDocuments()
   },
   methods: {
+    // 重置搜索，加载所有文档
     async loadDocuments() {
       this.loading = true
+      this.searchMode = ''
+      this.hybridResults = []
       try {
         const params = {
           page: this.currentPage,
@@ -187,6 +192,7 @@ export default {
         this.documents = response.data.content
         this.totalPages = response.data.totalPages
         this.isSearching = false
+        this.searchKeyword = ''
       } catch (error) {
         console.error('加载文档失败:', error)
         alert('加载文档失败，请重试')
@@ -202,6 +208,7 @@ export default {
       }
       
       this.loading = true
+      this.searchMode = 'keyword'
       try {
         const params = {
           keyword: this.searchKeyword.trim(),
@@ -224,7 +231,14 @@ export default {
       if (page < 0 || page >= this.totalPages) return
       this.currentPage = page
       if (this.isSearching) {
-        this.searchDocuments()
+        // 根据当前搜索模式重新执行搜索
+        if (this.searchMode === 'semantic') {
+          this.semanticSearch()
+        } else if (this.searchMode === 'hybrid') {
+          this.hybridSearch()
+        } else {
+          this.searchDocuments()
+        }
       } else {
         this.loadDocuments()
       }
@@ -344,6 +358,74 @@ export default {
         hour: '2-digit',
         minute: '2-digit'
       })
+    },
+
+    // 高亮文本中的关键词
+    highlightText(text) {
+      if (!text || !this.searchKeyword.trim()) return text
+      const keyword = this.searchKeyword.trim()
+      const regex = new RegExp(`(${keyword})`, 'gi')
+      return text.replace(regex, '<mark>$1</mark>')
+    },
+
+    // 语义搜索
+    async semanticSearch() {
+      if (!this.searchKeyword.trim()) {
+        this.loadDocuments()
+        return
+      }
+      
+      this.loading = true
+      this.searchMode = 'semantic'
+      try {
+        const params = {
+          keyword: this.searchKeyword.trim(),
+          page: this.currentPage,
+          size: this.pageSize
+        }
+        const response = await axios.get('/api/knowledge/search/semantic', { params })
+        this.documents = response.data.content
+        this.totalPages = response.data.totalPages
+        this.isSearching = true
+      } catch (error) {
+        console.error('语义搜索失败:', error)
+        alert('语义搜索失败，请重试')
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // 混合搜索
+    async hybridSearch() {
+      if (!this.searchKeyword.trim()) {
+        this.loadDocuments()
+        return
+      }
+      
+      this.loading = true
+      this.searchMode = 'hybrid'
+      try {
+        const params = {
+          keyword: this.searchKeyword.trim(),
+          page: this.currentPage,
+          size: this.pageSize
+        }
+        const response = await axios.get('/api/knowledge/search/hybrid', { params })
+        this.documents = response.data.content
+        this.totalPages = response.data.totalPages
+        this.hybridResults = response.data.content || []
+        this.isSearching = true
+      } catch (error) {
+        console.error('混合搜索失败:', error)
+        alert('混合搜索失败，请重试')
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // 获取混合搜索结果信息
+    getHybridResult(docId) {
+      return this.hybridResults.find(doc => doc.id === docId)
     }
   }
 }
@@ -659,5 +741,71 @@ export default {
   padding: 15px;
   border-radius: 8px;
   line-height: 1.6;
+}
+
+/* 搜索模式指示器 */
+.search-mode-indicator {
+  background: #f0f7ff;
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  padding: 10px 15px;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 14px;
+}
+
+.search-mode-indicator strong {
+  color: #667eea;
+}
+
+/* 高亮样式 */
+mark {
+  background: #fff3cd;
+  color: #856404;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+/* 混合搜索结果样式 */
+.hybrid-info {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 12px;
+}
+
+.match-type {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f5f5f5;
+}
+
+.score {
+  color: #667eea;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+/* 搜索按钮样式 */
+.semantic-btn {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hybrid-btn {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
 }
 </style>
