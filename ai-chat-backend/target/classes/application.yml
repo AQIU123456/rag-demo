@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/ai_chat?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${OPENAI_API_KEY:your-api-key-here}
+      model-name: gpt-3.5-turbo
+      temperature: 0.7
+    
+    # 阶段 2: 添加嵌入模型配置（用于向量化）
+    embedding-model:
+      api-key: ${OPENAI_API_KEY:your-api-key-here}
+      model-name: text-embedding-ada-002
+
+# 预留：Milvus 向量数据库配置（后续切换时使用）
+# milvus:
+#   host: localhost
+#   port: 19530
+#   collection-name: knowledge_base
+
+logging:
+  level:
+    com.example.aichat: DEBUG
+    dev.langchain4j: DEBUG
