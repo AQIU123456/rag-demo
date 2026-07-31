@@ -1,5 +1,6 @@
 /workspace/ai-chat-backend/src/main/java/com/example/aichat/controller/ChatController.java
 /workspace/ai-chat-backend/src/main/java/com/example/aichat/controller/DocumentChunkController.java
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/enums/ChunkStrategy.java
 /workspace/ai-chat-backend/src/main/java/com/example/aichat/entity/DocumentChunk.java
 /workspace/ai-chat-backend/src/main/java/com/example/aichat/repository/ChatMessageRepository.java
 /workspace/ai-chat-backend/src/main/java/com/example/aichat/entity/ChatMessage.java

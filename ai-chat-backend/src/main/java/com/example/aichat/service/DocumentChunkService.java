@@ -3,6 +3,7 @@ package com.example.aichat.service;
 import com.example.aichat.dto.DocumentChunkDTO;
 import com.example.aichat.entity.DocumentChunk;
 import com.example.aichat.entity.KnowledgeDocument;
+import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
 import dev.langchain4j.data.document.Document;
@@ -32,7 +33,6 @@ public class DocumentChunkService {
     private final KnowledgeDocumentRepository documentRepository;
     private final EmbeddingModel embeddingModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
-    private final DocumentSplitter documentSplitter;
 
     public DocumentChunkService(DocumentChunkRepository chunkRepository,
                                 KnowledgeDocumentRepository documentRepository,
@@ -42,8 +42,24 @@ public class DocumentChunkService {
         this.documentRepository = documentRepository;
         this.embeddingModel = embeddingModel;
         this.embeddingStore = embeddingStore;
-        // 配置递归分块参数：每块 512 字符，重叠 100 字符
-        this.documentSplitter = DocumentSplitters.recursive(512, 100);
+    }
+
+    /**
+     * 获取分块器（根据策略）
+     */
+    private DocumentSplitter getSplitter(ChunkStrategy strategy) {
+        switch (strategy) {
+            case SEMANTIC:
+                // 语义切分：使用较小的块和较大的重叠，配合后续语义优化
+                return DocumentSplitters.recursive(300, 150);
+            case PARENT_CHILD:
+                // 父子索引：小块用于检索
+                return DocumentSplitters.recursive(256, 50);
+            case RECURSIVE:
+            default:
+                // 递归字符切分（默认）：每块 512 字符，重叠 100 字符
+                return DocumentSplitters.recursive(512, 100);
+        }
     }
 
     /**
@@ -115,16 +131,24 @@ public class DocumentChunkService {
     /**
      * 重新生成分块（基于当前文档内容重新切分）
      */
-    public List<DocumentChunkDTO> regenerateChunks(Long documentId) {
+    public List<DocumentChunkDTO> regenerateChunks(Long documentId, ChunkStrategy strategy) {
         KnowledgeDocument document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + documentId));
         
         // 删除旧的分块记录
         chunkRepository.deleteByDocumentId(documentId);
         
+        // 根据策略选择分块器
+        DocumentSplitter splitter = getSplitter(strategy);
+        
         // 重新分块
         Document doc = Document.from(document.getContent());
-        List<TextSegment> segments = documentSplitter.split(doc);
+        List<TextSegment> segments = splitter.split(doc);
+        
+        // 语义切分优化：合并语义相似的相邻块
+        if (strategy == ChunkStrategy.SEMANTIC) {
+            segments = optimizeSemanticSegments(segments);
+        }
         
         List<DocumentChunk> newChunks = new ArrayList<>();
         for (int i = 0; i < segments.size(); i++) {
@@ -149,6 +173,7 @@ public class DocumentChunkService {
                 TextSegment segment = segments.get(i);
                 segment.metadata().put("source", "doc_" + documentId);
                 segment.metadata().put("chunk_id", String.valueOf(savedChunks.get(i).getId()));
+                segment.metadata().put("strategy", strategy.getCode());
                 embeddingStore.add(embeddings.get(i), segment);
             }
         } catch (Exception e) {
@@ -166,6 +191,65 @@ public class DocumentChunkService {
                         .createdAt(chunk.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 语义切分优化：合并语义相似的相邻块
+     */
+    private List<TextSegment> optimizeSemanticSegments(List<TextSegment> segments) {
+        if (segments.size() <= 2) {
+            return segments;
+        }
+        
+        List<TextSegment> optimized = new ArrayList<>();
+        StringBuilder currentBuffer = new StringBuilder(segments.get(0).text());
+        
+        for (int i = 1; i < segments.size(); i++) {
+            TextSegment current = segments.get(i);
+            TextSegment previous = segments.get(i - 1);
+            
+            // 计算语义相似度（简化版：使用文本重叠率模拟）
+            double similarity = calculateTextSimilarity(previous.text(), current.text());
+            
+            // 如果相似度高，合并到当前块
+            if (similarity > 0.3) {
+                currentBuffer.append("\n").append(current.text());
+            } else {
+                // 相似度低，保存当前块并开始新块
+                optimized.add(TextSegment.from(currentBuffer.toString()));
+                currentBuffer = new StringBuilder(current.text());
+            }
+        }
+        
+        // 添加最后一个块
+        if (currentBuffer.length() > 0) {
+            optimized.add(TextSegment.from(currentBuffer.toString()));
+        }
+        
+        return optimized;
+    }
+
+    /**
+     * 计算文本相似度（简化版本，使用 Jaccard 相似度）
+     */
+    private double calculateTextSimilarity(String text1, String text2) {
+        String[] words1 = text1.toLowerCase().split("\\s+");
+        String[] words2 = text2.toLowerCase().split("\\s+");
+        
+        java.util.Set<String> set1 = new java.util.HashSet<>();
+        java.util.Set<String> set2 = new java.util.HashSet<>();
+        
+        for (String word : words1) set1.add(word);
+        for (String word : words2) set2.add(word);
+        
+        java.util.Set<String> intersection = new java.util.HashSet<>(set1);
+        intersection.retainAll(set2);
+        
+        java.util.Set<String> union = new java.util.HashSet<>(set1);
+        union.addAll(set2);
+        
+        if (union.isEmpty()) return 0.0;
+        return (double) intersection.size() / union.size();
     }
 
     /**

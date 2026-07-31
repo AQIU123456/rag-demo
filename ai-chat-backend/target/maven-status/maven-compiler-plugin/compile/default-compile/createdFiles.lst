@@ -6,6 +6,7 @@ com/example/aichat/dto/DocumentChunkDTO$DocumentChunkDTOBuilder.class
 com/example/aichat/service/RagService$Citation.class
 com/example/aichat/entity/ChatMessage$ChatMessageBuilder.class
 com/example/aichat/service/RagService.class
+com/example/aichat/enums/ChunkStrategy.class
 com/example/aichat/entity/ChatMessage.class
 com/example/aichat/dto/ChatRequest.class
 com/example/aichat/dto/DocumentUploadRequest$DocumentUploadRequestBuilder.class
@@ -23,6 +24,7 @@ com/example/aichat/dto/DocumentChunkDTO.class
 com/example/aichat/dto/DocumentResponse$DocumentResponseBuilder.class
 com/example/aichat/repository/KnowledgeDocumentRepository.class
 com/example/aichat/entity/ChatMessage$MessageRole.class
+com/example/aichat/service/DocumentChunkService$1.class
 com/example/aichat/entity/DocumentChunk$DocumentChunkBuilder.class
 com/example/aichat/entity/DocumentChunk.class
 com/example/aichat/controller/KnowledgeDocumentController.class
