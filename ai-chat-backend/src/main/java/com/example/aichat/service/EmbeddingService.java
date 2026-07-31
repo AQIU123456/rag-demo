@@ -28,8 +28,9 @@ public class EmbeddingService {
                            EmbeddingModel embeddingModel) {
         this.embeddingStore = embeddingStore;
         this.embeddingModel = embeddingModel;
-        // 配置分块参数：每块 500 字符，重叠 50 字符
-        this.documentSplitter = DocumentSplitters.recursive(500, 50);
+        // 配置递归分块参数：每块 400 字符，重叠 80 字符
+        // 较小的块大小提高检索精度，较大的重叠度保持语义连贯性
+        this.documentSplitter = DocumentSplitters.recursive(400, 80);
     }
 
     /**
