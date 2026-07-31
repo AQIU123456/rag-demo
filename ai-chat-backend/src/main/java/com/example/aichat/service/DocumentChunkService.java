@@ -193,9 +193,11 @@ public class DocumentChunkService {
      */
     public void updateChunkOrder(List<Long> chunkIds) {
         for (int i = 0; i < chunkIds.size(); i++) {
-            DocumentChunk chunk = chunkRepository.findById(chunkIds.get(i))
-                    .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkIds.get(i)));
-            chunk.setChunkIndex(i);
+            final int index = i;
+            final Long chunkId = chunkIds.get(i);
+            DocumentChunk chunk = chunkRepository.findById(chunkId)
+                    .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkId));
+            chunk.setChunkIndex(index);
             chunkRepository.save(chunk);
         }
     }

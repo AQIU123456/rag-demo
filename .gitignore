@@ -4,16 +4,11 @@
 *.o
 *.obj
 *.out
-build/
 target/
 
 # Dependencies
 node_modules/
-venv/
-.venv/
-__pycache__/
-.mypy_cache/
-.pytest_cache/
+.m2/
 .gradle/
 
 # Logs and temp files
@@ -29,15 +24,25 @@ __pycache__/
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# System files
-.DS_Store
-Thumbs.db
+# Maven
+.mvn/
+mvn-status/
 
-# Coverage reports
+# Coverage
 coverage/
 htmlcov/
 .coverage
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
 
 # Compressed files
 *.zip
