@@ -141,6 +141,90 @@
           <p v-if="viewingDoc.description" class="description">{{ viewingDoc.description }}</p>
           <div class="content-preview">{{ viewingDoc.content }}</div>
         </div>
+        <div class="modal-footer">
+          <button @click="viewChunks(viewingDoc)" class="chunks-btn">查看分块</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分块管理弹窗 -->
+    <div v-if="showChunkModal" class="modal-overlay chunk-overlay" @click.self="closeChunkModal">
+      <div class="modal chunk-modal">
+        <div class="modal-header">
+          <h3>分块管理 - {{ currentDocument?.title }}</h3>
+          <button @click="closeChunkModal" class="close-btn">×</button>
+        </div>
+        
+        <div class="chunk-toolbar">
+          <button @click="loadChunks" class="toolbar-btn" :disabled="loadingChunks">刷新</button>
+          <button @click="regenerateChunks" class="toolbar-btn regenerate" :disabled="loadingChunks">重新生成分块</button>
+          <span class="chunk-count">共 {{ chunks.length }} 个分块</span>
+        </div>
+
+        <div class="chunks-list">
+          <div v-if="loadingChunks" class="loading">加载分块中...</div>
+          
+          <div v-else-if="chunks.length === 0" class="empty-state">
+            暂无分块，请点击"重新生成分块"按钮
+          </div>
+
+          <div 
+            v-else
+            v-for="chunk in chunks" 
+            :key="chunk.id"
+            class="chunk-item"
+            :class="{ 'editing': editingChunkId === chunk.id }"
+          >
+            <div class="chunk-header">
+              <span class="chunk-index">分块 #{{ chunk.chunkIndex + 1 }}</span>
+              <div class="chunk-actions">
+                <button 
+                  v-if="editingChunkId !== chunk.id" 
+                  @click="startEditChunk(chunk)" 
+                  class="action-btn edit"
+                >
+                  编辑
+                </button>
+                <button 
+                  v-else 
+                  @click="saveChunkEdit(chunk)" 
+                  class="action-btn save"
+                  :disabled="savingChunk"
+                >
+                  {{ savingChunk ? '保存中...' : '保存' }}
+                </button>
+                <button 
+                  v-if="editingChunkId !== chunk.id" 
+                  @click="deleteChunkConfirm(chunk)" 
+                  class="action-btn delete"
+                >
+                  删除
+                </button>
+                <button 
+                  v-else 
+                  @click="cancelEditChunk" 
+                  class="action-btn cancel"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+            
+            <div class="chunk-content">
+              <textarea 
+                v-if="editingChunkId === chunk.id"
+                v-model="editContent"
+                rows="6"
+                class="edit-textarea"
+              ></textarea>
+              <pre v-else>{{ chunk.content }}</pre>
+            </div>
+            
+            <div class="chunk-meta">
+              <span>创建时间：{{ formatDateTime(chunk.createdAt) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -171,7 +255,15 @@ export default {
         description: '',
         fileType: 'txt',
         content: ''
-      }
+      },
+      // 分块管理相关
+      showChunkModal: false,
+      currentDocument: null,
+      chunks: [],
+      loadingChunks: false,
+      editingChunkId: null,
+      editContent: '',
+      savingChunk: false
     }
   },
   mounted() {
@@ -444,6 +536,136 @@ export default {
     // 获取混合搜索结果信息
     getHybridResult(docId) {
       return this.hybridResults.find(doc => doc.documentId === docId)
+    },
+
+    // ========== 分块管理相关方法 ==========
+    
+    // 查看文档分块
+    async viewChunks(doc) {
+      this.currentDocument = doc
+      this.showChunkModal = true
+      await this.loadChunks()
+    },
+
+    // 关闭分块管理弹窗
+    closeChunkModal() {
+      this.showChunkModal = false
+      this.currentDocument = null
+      this.chunks = []
+      this.editingChunkId = null
+      this.editContent = ''
+    },
+
+    // 加载分块列表
+    async loadChunks() {
+      if (!this.currentDocument?.id) return
+      
+      this.loadingChunks = true
+      try {
+        const response = await axios.get('/api/knowledge/chunks', {
+          params: { documentId: this.currentDocument.id }
+        })
+        this.chunks = response.data
+      } catch (error) {
+        console.error('加载分块失败:', error)
+        alert('加载分块失败，请重试')
+      } finally {
+        this.loadingChunks = false
+      }
+    },
+
+    // 重新生成分块
+    async regenerateChunks() {
+      if (!confirm('确定要重新生成分块吗？这将删除现有分块并基于当前文档内容重新切分。')) return
+      
+      this.loadingChunks = true
+      try {
+        const response = await axios.post('/api/knowledge/chunks/regenerate', null, {
+          params: { documentId: this.currentDocument.id }
+        })
+        this.chunks = response.data
+        alert('分块重新生成成功')
+      } catch (error) {
+        console.error('重新生成分块失败:', error)
+        alert('重新生成分块失败，请重试')
+      } finally {
+        this.loadingChunks = false
+      }
+    },
+
+    // 开始编辑分块
+    startEditChunk(chunk) {
+      this.editingChunkId = chunk.id
+      this.editContent = chunk.content
+    },
+
+    // 取消编辑分块
+    cancelEditChunk() {
+      this.editingChunkId = null
+      this.editContent = ''
+    },
+
+    // 保存分块编辑
+    async saveChunkEdit(chunk) {
+      if (!this.editContent.trim()) {
+        alert('分块内容不能为空')
+        return
+      }
+
+      this.savingChunk = true
+      try {
+        const response = await axios.put(`/api/knowledge/chunks/${chunk.id}`, {
+          content: this.editContent.trim()
+        })
+        
+        // 更新本地分块数据
+        const index = this.chunks.findIndex(c => c.id === chunk.id)
+        if (index !== -1) {
+          this.chunks[index] = response.data
+        }
+        
+        this.editingChunkId = null
+        this.editContent = ''
+        alert('分块更新成功，向量嵌入已重新生成')
+      } catch (error) {
+        console.error('更新分块失败:', error)
+        alert('更新分块失败，请重试')
+      } finally {
+        this.savingChunk = false
+      }
+    },
+
+    // 删除分块确认
+    deleteChunkConfirm(chunk) {
+      if (!confirm(`确定要删除分块 #${chunk.chunkIndex + 1} 吗？`)) return
+      this.deleteChunk(chunk)
+    },
+
+    // 删除分块
+    async deleteChunk(chunk) {
+      try {
+        await axios.delete(`/api/knowledge/chunks/${chunk.id}`)
+        
+        // 从本地列表中移除
+        this.chunks = this.chunks.filter(c => c.id !== chunk.id)
+        alert('分块删除成功')
+      } catch (error) {
+        console.error('删除分块失败:', error)
+        alert('删除分块失败，请重试')
+      }
+    },
+
+    // 格式化日期时间（用于分块）
+    formatDateTime(timestamp) {
+      if (!timestamp) return ''
+      const date = new Date(timestamp)
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
     }
   }
 }
@@ -825,5 +1047,197 @@ mark {
   border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
+}
+
+/* 分块管理样式 */
+.modal-footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chunks-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chunks-btn:hover {
+  opacity: 0.9;
+}
+
+.chunk-overlay {
+  align-items: flex-start;
+  padding-top: 30px;
+}
+
+.chunk-modal {
+  max-width: 1000px;
+  width: 95%;
+  max-height: 85vh;
+}
+
+.chunk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.toolbar-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  background: #667eea;
+  color: white;
+  transition: opacity 0.2s;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-btn.regenerate {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.chunk-count {
+  margin-left: auto;
+  color: #666;
+  font-size: 14px;
+}
+
+.chunks-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.chunk-item {
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  transition: box-shadow 0.2s;
+}
+
+.chunk-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.chunk-item.editing {
+  border-color: #667eea;
+  background: #f0f7ff;
+}
+
+.chunk-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.chunk-index {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 14px;
+}
+
+.chunk-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chunk-actions .action-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chunk-actions .action-btn.edit {
+  background: #667eea;
+  color: white;
+}
+
+.chunk-actions .action-btn.save {
+  background: #11998e;
+  color: white;
+}
+
+.chunk-actions .action-btn.delete {
+  background: #ff4d4f;
+  color: white;
+}
+
+.chunk-actions .action-btn.cancel {
+  background: #999;
+  color: white;
+}
+
+.chunk-actions .action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chunk-content {
+  margin-bottom: 12px;
+}
+
+.chunk-content pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  background: #fff;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.edit-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.edit-textarea:focus {
+  border-color: #667eea;
+}
+
+.chunk-meta {
+  font-size: 12px;
+  color: #999;
+  padding-top: 10px;
+  border-top: 1px dashed #e0e0e0;
 }
 </style>
