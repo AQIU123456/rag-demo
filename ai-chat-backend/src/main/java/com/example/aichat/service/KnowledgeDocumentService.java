@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -28,6 +29,23 @@ public class KnowledgeDocumentService {
                                    EmbeddingService embeddingService) {
         this.documentRepository = documentRepository;
         this.embeddingService = embeddingService;
+    }
+
+    /**
+     * 启动时重新嵌入所有已有文档（解决 InMemoryEmbeddingStore 重启丢失的问题）
+     */
+    @PostConstruct
+    public void reEmbedExistingDocuments() {
+        List<KnowledgeDocument> documents = documentRepository.findAll();
+        for (KnowledgeDocument doc : documents) {
+            try {
+                embeddingService.embedAndStore(doc.getContent(), "doc_" + doc.getId());
+                System.out.println("重新嵌入文档: " + doc.getTitle());
+            } catch (Exception e) {
+                System.err.println("重新嵌入文档失败 (" + doc.getTitle() + "): " + e.getMessage());
+            }
+        }
+        System.out.println("文档重嵌入完成，共处理 " + documents.size() + " 个文档");
     }
     
     /**

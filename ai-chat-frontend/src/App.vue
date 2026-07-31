@@ -13,26 +13,35 @@
       >
         知识库
       </button>
+      <button 
+        :class="{ active: currentView === 'rag' }" 
+        @click="currentView = 'rag'"
+      >
+        📚 AI 问答
+      </button>
     </nav>
     
     <Chat v-if="currentView === 'chat'" />
-    <KnowledgeBase v-else />
+    <KnowledgeBase v-else-if="currentView === 'knowledge'" />
+    <RagChat v-else />
   </div>
 </template>
 
 <script>
 import Chat from './components/Chat.vue'
 import KnowledgeBase from './components/KnowledgeBase.vue'
+import RagChat from './components/RagChat.vue'
 
 export default {
   name: 'AppRoot',
   components: {
     Chat,
-    KnowledgeBase
+    KnowledgeBase,
+    RagChat
   },
   data() {
     return {
-      currentView: 'chat'
+      currentView: 'rag'
     }
   }
 }

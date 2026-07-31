@@ -379,13 +379,21 @@ export default {
       this.searchMode = 'semantic'
       try {
         const params = {
-          keyword: this.searchKeyword.trim(),
-          page: this.currentPage,
-          size: this.pageSize
+          query: this.searchKeyword.trim(),
+          maxResults: 10
         }
-        const response = await axios.get('/api/knowledge/search/semantic', { params })
-        this.documents = response.data.content
-        this.totalPages = response.data.totalPages
+        const response = await axios.get('/api/knowledge/semantic-search', { params })
+        // 语义搜索结果返回 SearchResult 列表，转换为文档列表显示
+        this.documents = response.data.map(r => ({
+          id: r.source ? parseInt(r.source.replace('doc_', '')) : null,
+          title: r.source || '语义匹配结果',
+          content: r.content,
+          description: '相似度：' + (r.score * 100).toFixed(1) + '%',
+          fileType: 'semantic',
+          fileSize: 0,
+          wordCount: r.content.length
+        }))
+        this.totalPages = 1
         this.isSearching = true
       } catch (error) {
         console.error('语义搜索失败:', error)
@@ -406,14 +414,24 @@ export default {
       this.searchMode = 'hybrid'
       try {
         const params = {
-          keyword: this.searchKeyword.trim(),
-          page: this.currentPage,
-          size: this.pageSize
+          query: this.searchKeyword.trim(),
+          maxResults: 10
         }
-        const response = await axios.get('/api/knowledge/search/hybrid', { params })
-        this.documents = response.data.content
-        this.totalPages = response.data.totalPages
-        this.hybridResults = response.data.content || []
+        const response = await axios.get('/api/knowledge/hybrid-search', { params })
+        // 混合搜索结果转换为文档列表显示
+        this.documents = response.data.map(r => ({
+          id: r.documentId,
+          title: r.title,
+          content: r.content,
+          description: r.description,
+          fileType: 'hybrid',
+          fileSize: 0,
+          wordCount: r.content ? r.content.length : 0,
+          combinedScore: r.combinedScore,
+          matchTypes: r.matchTypes
+        }))
+        this.totalPages = 1
+        this.hybridResults = response.data || []
         this.isSearching = true
       } catch (error) {
         console.error('混合搜索失败:', error)
@@ -425,7 +443,7 @@ export default {
 
     // 获取混合搜索结果信息
     getHybridResult(docId) {
-      return this.hybridResults.find(doc => doc.id === docId)
+      return this.hybridResults.find(doc => doc.documentId === docId)
     }
   }
 }
