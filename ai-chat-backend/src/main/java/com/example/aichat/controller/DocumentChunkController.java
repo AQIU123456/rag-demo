@@ -1,6 +1,7 @@
 package com.example.aichat.controller;
 
 import com.example.aichat.dto.DocumentChunkDTO;
+import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.service.DocumentChunkService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -64,13 +65,31 @@ public class DocumentChunkController {
 
     /**
      * 重新生成分块（基于当前文档内容重新切分）
-     * POST /api/knowledge/chunks/regenerate?documentId=1
+     * POST /api/knowledge/chunks/regenerate?documentId=1&strategy=RECURSIVE
      */
     @PostMapping("/regenerate")
     public ResponseEntity<List<DocumentChunkDTO>> regenerateChunks(
-            @RequestParam Long documentId) {
-        List<DocumentChunkDTO> chunks = chunkService.regenerateChunks(documentId);
+            @RequestParam Long documentId,
+            @RequestParam(defaultValue = "RECURSIVE") String strategy) {
+        ChunkStrategy chunkStrategy = ChunkStrategy.fromCode(strategy);
+        List<DocumentChunkDTO> chunks = chunkService.regenerateChunks(documentId, chunkStrategy);
         return ResponseEntity.ok(chunks);
+    }
+
+    /**
+     * 获取支持的分块策略列表
+     * GET /api/knowledge/chunks/strategies
+     */
+    @GetMapping("/strategies")
+    public ResponseEntity<List<Map<String, String>>> getChunkStrategies() {
+        List<Map<String, String>> strategies = new java.util.ArrayList<>();
+        for (ChunkStrategy strategy : ChunkStrategy.values()) {
+            Map<String, String> item = new HashMap<>();
+            item.put("code", strategy.getCode());
+            item.put("description", strategy.getDescription());
+            strategies.add(item);
+        }
+        return ResponseEntity.ok(strategies);
     }
 
     /**

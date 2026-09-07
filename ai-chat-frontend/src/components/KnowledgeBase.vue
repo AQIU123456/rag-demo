@@ -157,6 +157,11 @@
         
         <div class="chunk-toolbar">
           <button @click="loadChunks" class="toolbar-btn" :disabled="loadingChunks">刷新</button>
+          <select v-model="selectedStrategy" class="strategy-select">
+            <option v-for="strategy in chunkStrategies" :key="strategy.code" :value="strategy.code">
+              {{ strategy.description }}
+            </option>
+          </select>
           <button @click="regenerateChunks" class="toolbar-btn regenerate" :disabled="loadingChunks">重新生成分块</button>
           <span class="chunk-count">共 {{ chunks.length }} 个分块</span>
         </div>
@@ -263,7 +268,9 @@ export default {
       loadingChunks: false,
       editingChunkId: null,
       editContent: '',
-      savingChunk: false
+      savingChunk: false,
+      chunkStrategies: [],
+      selectedStrategy: 'RECURSIVE'
     }
   },
   mounted() {
@@ -544,7 +551,18 @@ export default {
     async viewChunks(doc) {
       this.currentDocument = doc
       this.showChunkModal = true
+      await this.loadChunkStrategies()
       await this.loadChunks()
+    },
+
+    // 加载分块策略列表
+    async loadChunkStrategies() {
+      try {
+        const response = await axios.get('/api/knowledge/chunks/strategies')
+        this.chunkStrategies = response.data
+      } catch (error) {
+        console.error('加载分块策略失败:', error)
+      }
     },
 
     // 关闭分块管理弹窗
@@ -576,12 +594,16 @@ export default {
 
     // 重新生成分块
     async regenerateChunks() {
-      if (!confirm('确定要重新生成分块吗？这将删除现有分块并基于当前文档内容重新切分。')) return
+      const strategyName = this.chunkStrategies.find(s => s.code === this.selectedStrategy)?.description || this.selectedStrategy
+      if (!confirm(`确定要使用【${strategyName}】策略重新生成分块吗？这将删除现有分块并基于当前文档内容重新切分。`)) return
       
       this.loadingChunks = true
       try {
         const response = await axios.post('/api/knowledge/chunks/regenerate', null, {
-          params: { documentId: this.currentDocument.id }
+          params: { 
+            documentId: this.currentDocument.id,
+            strategy: this.selectedStrategy
+          }
         })
         this.chunks = response.data
         alert('分块重新生成成功')
@@ -1092,6 +1114,21 @@ mark {
   padding: 15px;
   background: #f5f7fa;
   border-radius: 8px;
+}
+
+.strategy-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  min-width: 150px;
+}
+
+.strategy-select:focus {
+  outline: none;
+  border-color: #667eea;
 }
 
 .toolbar-btn {
