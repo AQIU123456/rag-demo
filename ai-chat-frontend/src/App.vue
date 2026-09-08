@@ -5,13 +5,13 @@
         :class="{ active: currentView === 'chat' }" 
         @click="currentView = 'chat'"
       >
-        AI 聊天
+        💬 AI 聊天
       </button>
       <button 
         :class="{ active: currentView === 'knowledge' }" 
         @click="currentView = 'knowledge'"
       >
-        知识库
+        📁 知识库
       </button>
       <button 
         :class="{ active: currentView === 'rag' }" 
@@ -19,11 +19,18 @@
       >
         📚 AI 问答
       </button>
+      <button 
+        :class="{ active: currentView === 'tools' }" 
+        @click="currentView = 'tools'"
+      >
+        🛠️ 工具调用
+      </button>
     </nav>
     
     <Chat v-if="currentView === 'chat'" />
     <KnowledgeBase v-else-if="currentView === 'knowledge'" />
-    <RagChat v-else />
+    <RagChat v-else-if="currentView === 'rag'" />
+    <ToolChat v-else />
   </div>
 </template>
 
@@ -31,17 +38,19 @@
 import Chat from './components/Chat.vue'
 import KnowledgeBase from './components/KnowledgeBase.vue'
 import RagChat from './components/RagChat.vue'
+import ToolChat from './components/ToolChat.vue'
 
 export default {
   name: 'AppRoot',
   components: {
     Chat,
     KnowledgeBase,
-    RagChat
+    RagChat,
+    ToolChat
   },
   data() {
     return {
-      currentView: 'rag'
+      currentView: 'tools'
     }
   }
 }

@@ -1,27 +1,28 @@
 ```
-# Compiled and build artifacts
-*.class
-*.o
-*.obj
-*.out
-target/
 # Dependencies
 node_modules/
-# Logs and temp files
-*.log
-*.tmp
-# Editors
-.vscode/
-.idea/
+
+# Build artifacts
+dist/
+
 # Environment
 .env
 .env.local
-*.env.*
-# Coverage
-coverage/
-htmlcov/
-.coverage
-# Maven
-**/target/
-**/maven-status/
+.env.*
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 ```
+/ai-chat-backend/target/
