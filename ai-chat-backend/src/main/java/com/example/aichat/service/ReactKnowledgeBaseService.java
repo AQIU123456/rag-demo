@@ -173,26 +173,22 @@ public class ReactKnowledgeBaseService {
         specifications.add(ToolSpecification.builder()
             .name("knowledge_search")
             .description("搜索企业知识库中的相关文档内容，用于回答公司政策、制度、流程等问题")
-            .addParameter("query", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING,
-                "搜索查询的关键词或问题")
+            .addParameter("query", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING)
             .build());
         
         // 添加天气查询工具
         specifications.add(ToolSpecification.builder()
             .name("weather_query")
             .description("查询指定城市的天气信息")
-            .addParameter("city", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING,
-                "城市名称")
+            .addParameter("city", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING)
             .build());
         
         // 添加订单查询工具
         specifications.add(ToolSpecification.builder()
             .name("order_query")
             .description("查询订单的详细信息，包括状态、金额、收货人等")
-            .addParameter("orderId", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING,
-                "订单号")
-            .addParameter("customerName", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING,
-                "客户姓名")
+            .addParameter("orderId", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING)
+            .addOptionalParameter("customerName", dev.langchain4j.agent.tool.JsonSchemaProperty.STRING)
             .build());
         
         return specifications;
