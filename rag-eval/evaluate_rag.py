@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import List, Dict
 
 import requests
@@ -37,18 +38,41 @@ console = Console()
 
 
 # ---------------------------------------------------------------------------
+# 0. 健康检查：先用短超时探测后端是否可达，避免整批请求长时间静默等待
+# ---------------------------------------------------------------------------
+def health_check(backend_url: str) -> bool:
+    """向后端根路径发一个 3 秒超时的 GET；无论返回什么状态码都说明服务在。"""
+    from urllib.parse import urlsplit
+    parts = urlsplit(backend_url)
+    base = f"{parts.scheme}://{parts.netloc}/"
+    try:
+        requests.get(base, timeout=(3, 5))
+        return True
+    except requests.RequestException:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # 1. 调用项目后端 RAG 接口，收集 SingleTurnSample
 # ---------------------------------------------------------------------------
 def collect_samples(backend_url: str, questions_file: str, limit: int,
                     max_results: int, timeout: int) -> List[dict]:
+    if not os.path.exists(questions_file):
+        console.print(f"[red]错误: 找不到问题集文件 {questions_file}"
+                      f"（当前目录: {os.getcwd()}）。"
+                      f"请在 rag-eval 目录下运行，或用绝对路径指定。[/red]")
+        sys.exit(1)
     with open(questions_file, "r", encoding="utf-8") as f:
         items = json.load(f)
     if limit > 0:
         items = items[:limit]
 
+    console.print(f"[green]问题集共 {len(items)} 条，开始逐个请求 RAG 接口"
+                  f"（单请求超时 {timeout}s）...[/green]")
     samples = []
     for i, item in enumerate(items):
         question = item["question"]
+        t0 = time.time()
         console.print(f"[cyan][{i + 1}/{len(items)}][/cyan] 请求 RAG 接口: {question}")
         try:
             resp = requests.post(
@@ -59,7 +83,7 @@ def collect_samples(backend_url: str, questions_file: str, limit: int,
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            console.print(f"[red]  请求失败，跳过该条: {e}[/red]")
+            console.print(f"[red]  请求失败({time.time() - t0:.1f}s)，跳过该条: {e}[/red]")
             continue
 
         if not data.get("success"):
@@ -74,6 +98,9 @@ def collect_samples(backend_url: str, questions_file: str, limit: int,
             "retrieved_contexts": contexts,
             "reference": item.get("reference"),  # 有 ground truth 才能算 context 类指标
         })
+        console.print(f"  [green]OK[/green] ({time.time() - t0:.1f}s) "
+                      f"answer {len(data.get('answer', ''))} 字，"
+                      f"contexts {len(contexts)} 条")
     return samples
 
 
@@ -174,11 +201,16 @@ def build_llms(backend_yml: str):
 # 3. 运行 RAGAS 评估并输出结果
 # ---------------------------------------------------------------------------
 def run_evaluation(samples: List[dict], metric_names: List[str], backend_yml: str):
-    from datasets import Dataset
-    from ragas import evaluate
-    from ragas.metrics import (
-        faithfulness, answer_relevancy, context_precision, context_recall,
-    )
+    try:
+        from datasets import Dataset
+        from ragas import evaluate
+        from ragas.metrics import (
+            faithfulness, answer_relevancy, context_precision, context_recall,
+        )
+    except ImportError as e:
+        console.print(f"[red]错误: 缺少依赖 {e}。"
+                      f"请先安装: pip install -r requirements.txt[/red]")
+        sys.exit(1)
     all_metrics = {
         "faithfulness": faithfulness,
         "answer_relevancy": answer_relevancy,
@@ -258,7 +290,18 @@ def main():
     parser.add_argument("--backend-yml", default=DEFAULT_YML,
                         help="后端 application.yml 路径，用于复用 chat-model/embedding-model "
                              "作为 judge（默认 %(default)s）")
+    parser.add_argument("--no-health-check", action="store_true",
+                        help="跳过后端健康检查，直接开始请求")
     args = parser.parse_args()
+
+    console.print(f"[bold]RAGAS 评估启动[/bold]  后端: {args.backend}  "
+                  f"问题集: {args.questions}")
+    if not args.no_health_check and not health_check(args.backend):
+        console.print(f"[red]错误: 无法连接后端 {args.backend}"
+                      f"（3 秒内无响应）。"
+                      f"请先启动 Spring Boot 后端，或用 --backend 指定正确地址；"
+                      f"确认服务在跑可加 --no-health-check 跳过本检查。[/red]")
+        sys.exit(1)
 
     samples = collect_samples(args.backend, args.questions, args.limit,
                               args.max_results, args.timeout)

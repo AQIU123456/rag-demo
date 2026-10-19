@@ -111,6 +111,21 @@ rag-eval/
 - **context_recall 低**：检索没找到该找的内容 → 调整分块策略（`ChunkStrategy`）、topK、嵌入模型。
 - **context_precision 低**：检索回来很多无关片段 → 提高相似度阈值 / rerank。
 
+## 常见问题排查
+
+**运行后"什么也没有输出"？** 现在脚本一启动就会先打印一行
+`RAGAS 评估启动 后端: ... 问题集: ...`，如果连这行都没有，通常是：
+
+1. **Python 输出被缓冲（Windows 常见）**：用 `python -u evaluate_rag.py ...`
+   运行禁用缓冲；或在 PowerShell 中设置 `$env:PYTHONUNBUFFERED="1"`。
+2. **装错了解释器/虚拟环境**：确认 `python` 与 `pip install -r requirements.txt`
+   用的是同一个环境（`where python` / `which python` 检查）。
+3. **不在 rag-eval 目录下运行**：找不到 `sample_questions.json` 时脚本会直接报错提示。
+
+若启动行有了但长时间停住：多半是后端未启动、每个请求在等超时。脚本现在会：
+- 启动时做 3 秒健康检查，连不上立即报错退出（可用 `--no-health-check` 跳过）；
+- 每条请求实时打印 `[i/N] 请求...`、耗时与成功/失败原因。
+
 ## 注意
 
 - 本环境当前无法直接跑通端到端评估：后端未启动且缺少 `OPENAI_API_KEY` 环境变量。
