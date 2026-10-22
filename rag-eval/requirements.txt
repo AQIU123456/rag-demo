@@ -1,0 +1,9 @@
+# RAGAS 评估依赖（Python >= 3.10）
+ragas==0.4.3
+langchain-community>=0.3,<0.4
+langchain-openai>=0.2,<0.3
+langchain-core>=0.3,<0.4
+datasets
+pandas
+rich
+pyyaml
