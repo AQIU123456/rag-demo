@@ -2,6 +2,8 @@ package com.example.aichat.controller;
 
 import com.example.aichat.dto.DocumentResponse;
 import com.example.aichat.dto.DocumentUploadRequest;
+import com.example.aichat.dto.HighlightRequest;
+import com.example.aichat.dto.HighlightResponse;
 import com.example.aichat.service.EmbeddingService;
 import com.example.aichat.service.KnowledgeDocumentService;
 import org.springframework.data.domain.Page;
@@ -10,9 +12,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/knowledge")
@@ -117,18 +117,17 @@ public class KnowledgeDocumentController {
      * POST /api/knowledge/highlight
      */
     @PostMapping("/highlight")
-    public ResponseEntity<Map<String, String>> highlightKeywords(
-            @RequestBody Map<String, String> request) {
+    public ResponseEntity<HighlightResponse> highlightKeywords(@RequestBody HighlightRequest request) {
         
-        String text = request.get("text");
-        String keywords = request.get("keywords");
-        String highlightTag = request.getOrDefault("highlightTag", "<em>");
+        String text = request.getText();
+        String keywords = request.getKeywords();
+        String highlightTag = request.getHighlightTag() != null ? request.getHighlightTag() : "<em>";
         
         String highlighted = documentService.highlightKeywords(text, keywords, highlightTag);
         
-        Map<String, String> response = new HashMap<>();
-        response.put("highlightedText", highlighted);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(HighlightResponse.builder()
+                .highlightedText(highlighted)
+                .build());
     }
 
     /**
