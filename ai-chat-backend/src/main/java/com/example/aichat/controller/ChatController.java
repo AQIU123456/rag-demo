@@ -2,6 +2,10 @@ package com.example.aichat.controller;
 
 import com.example.aichat.dto.ChatRequest;
 import com.example.aichat.dto.ChatResponse;
+import com.example.aichat.dto.RagChatRequest;
+import com.example.aichat.dto.RagChatResponse;
+import com.example.aichat.dto.ReactChatRequest;
+import com.example.aichat.dto.ReactChatResponse;
 import com.example.aichat.entity.ChatMessage;
 import com.example.aichat.repository.ChatMessageRepository;
 import com.example.aichat.service.ChatService;
@@ -11,10 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -73,45 +76,44 @@ public class ChatController {
      * POST /api/chat/rag
      */
     @PostMapping("/rag")
-    public ResponseEntity<Map<String, Object>> ragChat(@RequestBody Map<String, Object> request) {
-        String question = (String) request.get("question");
-        int maxResults = request.get("maxResults") != null ? 
-            ((Number) request.get("maxResults")).intValue() : 5;
-        
+    public ResponseEntity<RagChatResponse> ragChat(@RequestBody RagChatRequest request) {
+        String question = request.getQuestion();
+        int maxResults = request.getMaxResults() != null ? request.getMaxResults() : 5;
+
         if (question == null || question.trim().isEmpty()) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "问题不能为空");
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(RagChatResponse.builder()
+                    .success(false)
+                    .message("问题不能为空")
+                    .build());
         }
-        
+
         try {
             // 调用 RAG 服务进行智能问答
             RagService.RagResponse ragResponse = ragService.answerWithRag(question, maxResults);
-            
-            // 构建响应
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("answer", ragResponse.getAnswer());
-            response.put("context", ragResponse.getContext());
-            
+
             // 添加引用来源
-            List<Map<String, Object>> citations = new java.util.ArrayList<>();
-            for (RagService.Citation citation : ragResponse.getCitations()) {
-                Map<String, Object> citationMap = new HashMap<>();
-                citationMap.put("content", citation.getContent());
-                citationMap.put("score", citation.getScore());
-                citationMap.put("source", citation.getSource());
-                citations.add(citationMap);
-            }
-            response.put("citations", citations);
-            
+            List<RagChatResponse.CitationDTO> citations = ragResponse.getCitations().stream()
+                    .map(citation -> RagChatResponse.CitationDTO.builder()
+                            .content(citation.getContent())
+                            .score(citation.getScore())
+                            .source(citation.getSource())
+                            .build())
+                    .collect(Collectors.toList());
+
+            // 构建响应
+            RagChatResponse response = RagChatResponse.builder()
+                    .success(true)
+                    .answer(ragResponse.getAnswer())
+                    .context(ragResponse.getContext())
+                    .citations(citations)
+                    .build();
+
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "RAG 问答失败：" + e.getMessage());
-            return ResponseEntity.internalServerError().body(errorResponse);
+            return ResponseEntity.internalServerError().body(RagChatResponse.builder()
+                    .success(false)
+                    .message("RAG 问答失败：" + e.getMessage())
+                    .build());
         }
     }
     
@@ -120,53 +122,50 @@ public class ChatController {
      * POST /api/chat/react
      */
     @PostMapping("/react")
-    public ResponseEntity<Map<String, Object>> reactChat(@RequestBody Map<String, Object> request) {
-        String question = (String) request.get("question");
-        int maxResults = request.get("maxResults") != null ? 
-            ((Number) request.get("maxResults")).intValue() : 3;
-        boolean showReasoning = request.get("showReasoning") != null ? 
-            (Boolean) request.get("showReasoning") : true;
-        
+    public ResponseEntity<ReactChatResponse> reactChat(@RequestBody ReactChatRequest request) {
+        String question = request.getQuestion();
+        int maxResults = request.getMaxResults() != null ? request.getMaxResults() : 3;
+        boolean showReasoning = request.getShowReasoning() != null ? request.getShowReasoning() : true;
+
         if (question == null || question.trim().isEmpty()) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "问题不能为空");
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ReactChatResponse.builder()
+                    .success(false)
+                    .message("问题不能为空")
+                    .build());
         }
-        
+
         try {
             // 调用 ReAct 服务进行智能问答
-            ReactKnowledgeBaseService.ReactResponse reactResponse = 
+            ReactKnowledgeBaseService.ReactResponse reactResponse =
                 reactKnowledgeBaseService.answerWithReact(question, maxResults);
-            
-            // 构建响应
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("answer", reactResponse.getAnswer());
-            response.put("originalQuestion", reactResponse.getOriginalQuestion());
-            
+
+            ReactChatResponse.ReactChatResponseBuilder builder = ReactChatResponse.builder()
+                    .success(true)
+                    .answer(reactResponse.getAnswer())
+                    .originalQuestion(reactResponse.getOriginalQuestion());
+
             // 添加推理过程（可选）
             if (showReasoning) {
-                List<Map<String, Object>> reasoningSteps = new java.util.ArrayList<>();
-                for (ReactKnowledgeBaseService.ReactStep step : reactResponse.getReasoningSteps()) {
-                    Map<String, Object> stepMap = new HashMap<>();
-                    stepMap.put("type", step.getType().name());
-                    stepMap.put("content", step.getContent());
-                    stepMap.put("actionName", step.getActionName());
-                    stepMap.put("arguments", step.getArguments());
-                    stepMap.put("result", step.getResult());
-                    reasoningSteps.add(stepMap);
-                }
-                response.put("reasoningSteps", reasoningSteps);
-                response.put("formattedReasoning", reactResponse.getFormattedReasoning());
+                List<ReactChatResponse.ReasoningStepDTO> reasoningSteps =
+                    reactResponse.getReasoningSteps().stream()
+                        .map(step -> ReactChatResponse.ReasoningStepDTO.builder()
+                                .type(step.getType().name())
+                                .content(step.getContent())
+                                .actionName(step.getActionName())
+                                .arguments(step.getArguments())
+                                .result(step.getResult())
+                                .build())
+                        .collect(Collectors.toList());
+                builder.reasoningSteps(reasoningSteps);
+                builder.formattedReasoning(reactResponse.getFormattedReasoning());
             }
-            
-            return ResponseEntity.ok(response);
+
+            return ResponseEntity.ok(builder.build());
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "ReAct 问答失败：" + e.getMessage());
-            return ResponseEntity.internalServerError().body(errorResponse);
+            return ResponseEntity.internalServerError().body(ReactChatResponse.builder()
+                    .success(false)
+                    .message("ReAct 问答失败：" + e.getMessage())
+                    .build());
         }
     }
     

@@ -2,6 +2,7 @@ package com.example.aichat.controller;
 
 import com.example.aichat.dto.ChatRequest;
 import com.example.aichat.dto.ChatResponse;
+import com.example.aichat.dto.ToolListResponse;
 import com.example.aichat.entity.ChatMessage;
 import com.example.aichat.repository.ChatMessageRepository;
 import com.example.aichat.service.ToolCallingChatService;
@@ -9,9 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -90,27 +89,33 @@ public class ToolCallingController {
      * GET /api/chat/tools/list
      */
     @GetMapping("/list")
-    public ResponseEntity<Map<String, Object>> listTools() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        
-        List<Map<String, String>> tools = List.of(
-            createToolInfo("getWeather", "天气查询", "查询指定城市的天气信息", "city: 城市名称"),
-            createToolInfo("getOrderInfo", "订单查询", "根据订单号查询订单详细信息", "orderId: 订单号"),
-            createToolInfo("getOrdersByCustomer", "客户订单查询", "根据客户姓名查询其所有订单", "customerName: 客户姓名")
+    public ResponseEntity<ToolListResponse> listTools() {
+        List<ToolListResponse.ToolInfoDTO> tools = List.of(
+            ToolListResponse.ToolInfoDTO.builder()
+                    .name("getWeather")
+                    .title("天气查询")
+                    .description("查询指定城市的天气信息")
+                    .parameters("city: 城市名称")
+                    .build(),
+            ToolListResponse.ToolInfoDTO.builder()
+                    .name("getOrderInfo")
+                    .title("订单查询")
+                    .description("根据订单号查询订单详细信息")
+                    .parameters("orderId: 订单号")
+                    .build(),
+            ToolListResponse.ToolInfoDTO.builder()
+                    .name("getOrdersByCustomer")
+                    .title("客户订单查询")
+                    .description("根据客户姓名查询其所有订单")
+                    .parameters("customerName: 客户姓名")
+                    .build()
         );
-        
-        response.put("tools", tools);
-        return ResponseEntity.ok(response);
-    }
 
-    private Map<String, String> createToolInfo(String name, String title, 
-                                                String description, String parameters) {
-        Map<String, String> tool = new HashMap<>();
-        tool.put("name", name);
-        tool.put("title", title);
-        tool.put("description", description);
-        tool.put("parameters", parameters);
-        return tool;
+        ToolListResponse response = ToolListResponse.builder()
+                .success(true)
+                .tools(tools)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 }

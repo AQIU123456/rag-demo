@@ -1,14 +1,17 @@
 package com.example.aichat.controller;
 
+import com.example.aichat.dto.ChunkStrategyDTO;
+import com.example.aichat.dto.ChunkUpdateRequest;
 import com.example.aichat.dto.DocumentChunkDTO;
+import com.example.aichat.dto.HighlightRequest;
+import com.example.aichat.dto.HighlightResponse;
 import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.service.DocumentChunkService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 文档分块管理控制器
@@ -43,8 +46,8 @@ public class DocumentChunkController {
     @PutMapping("/{id}")
     public ResponseEntity<DocumentChunkDTO> updateChunk(
             @PathVariable Long id,
-            @RequestBody Map<String, String> request) {
-        String newContent = request.get("content");
+            @RequestBody ChunkUpdateRequest request) {
+        String newContent = request.getContent();
         if (newContent == null || newContent.trim().isEmpty()) {
             throw new IllegalArgumentException("分块内容不能为空");
         }
@@ -81,14 +84,13 @@ public class DocumentChunkController {
      * GET /api/knowledge/chunks/strategies
      */
     @GetMapping("/strategies")
-    public ResponseEntity<List<Map<String, String>>> getChunkStrategies() {
-        List<Map<String, String>> strategies = new java.util.ArrayList<>();
-        for (ChunkStrategy strategy : ChunkStrategy.values()) {
-            Map<String, String> item = new HashMap<>();
-            item.put("code", strategy.getCode());
-            item.put("description", strategy.getDescription());
-            strategies.add(item);
-        }
+    public ResponseEntity<List<ChunkStrategyDTO>> getChunkStrategies() {
+        List<ChunkStrategyDTO> strategies = java.util.Arrays.stream(ChunkStrategy.values())
+                .map(strategy -> ChunkStrategyDTO.builder()
+                        .code(strategy.getCode())
+                        .description(strategy.getDescription())
+                        .build())
+                .collect(Collectors.toList());
         return ResponseEntity.ok(strategies);
     }
 
@@ -108,16 +110,15 @@ public class DocumentChunkController {
      * POST /api/knowledge/chunks/highlight
      */
     @PostMapping("/highlight")
-    public ResponseEntity<Map<String, String>> highlightKeywords(
-            @RequestBody Map<String, String> request) {
-        String text = request.get("text");
-        String keywords = request.get("keywords");
-        String highlightTag = request.getOrDefault("highlightTag", "<em>");
+    public ResponseEntity<HighlightResponse> highlightKeywords(@RequestBody HighlightRequest request) {
+        String text = request.getText();
+        String keywords = request.getKeywords();
+        String highlightTag = request.getHighlightTag() != null ? request.getHighlightTag() : "<em>";
         
         if (text == null || keywords == null || keywords.trim().isEmpty()) {
-            Map<String, String> response = new HashMap<>();
-            response.put("highlightedText", text != null ? text : "");
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(HighlightResponse.builder()
+                    .highlightedText(text != null ? text : "")
+                    .build());
         }
         
         String[] keywordArray = keywords.split("\\s+");
@@ -130,8 +131,8 @@ public class DocumentChunkController {
                 highlightTag + "$0" + highlightTag.replace("<", "</"));
         }
         
-        Map<String, String> response = new HashMap<>();
-        response.put("highlightedText", result);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(HighlightResponse.builder()
+                .highlightedText(result)
+                .build());
     }
 }
