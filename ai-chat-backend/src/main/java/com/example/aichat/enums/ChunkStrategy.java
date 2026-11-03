@@ -22,7 +22,14 @@ public enum ChunkStrategy {
      */
     PARENT_CHILD("PARENT_CHILD", "父子索引切分");
 
+    /**
+     * 策略编码（如 RECURSIVE），用于前后端传参识别
+     */
     private final String code;
+
+    /**
+     * 策略中文描述（如 递归字符切分），用于前端展示
+     */
     private final String description;
 
     ChunkStrategy(String code, String description) {

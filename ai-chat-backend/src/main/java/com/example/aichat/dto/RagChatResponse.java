@@ -49,8 +49,19 @@ public class RagChatResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CitationDTO {
+        /**
+         * 引用的分块内容
+         */
         private String content;
+
+        /**
+         * 相似度得分
+         */
         private double score;
+
+        /**
+         * 来源文档标题
+         */
         private String source;
     }
 }
