@@ -67,7 +67,8 @@ public class RagService {
             EmbeddingService.SearchResult result = searchResults.get(i);
             contextBuilder.append(String.format("[%d] ", i + 1));
             contextBuilder.append(result.getContent());
-            contextBuilder.append(String.format(" (相似度：%.2f)\n\n", result.getScore()));
+            // getScore() 返回最终相关性分数（启用重排时为重排精排分数）
+            contextBuilder.append(String.format(" (相关度：%.2f)\n\n", result.getScore()));
         }
         
         return contextBuilder.toString();

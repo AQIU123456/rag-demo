@@ -30,6 +30,22 @@ langchain4j:
       base-url: ${OPENAI_API_HOME_URL_ST}
       model-name: Qwen/Qwen3-VL-Embedding-8B
 
+# 重排（Rerank）功能配置：向量粗排召回 -> 交叉编码器精排
+rerank:
+  # 总开关：false 时检索行为与纯向量排序完全一致
+  enabled: true
+  # OpenAI / vLLM / HuggingFace TEI 兼容的 /v1/rerank 接口地址
+  # 留空时使用内置的本地轻量重排兜底（关键词重合度 + 向量分数融合）
+  api-url: ${RERANK_API_URL:}
+  # API 密钥（本地部署无鉴权时可为空）
+  api-key: ${RERANK_API_KEY:}
+  # 重排模型名称
+  model-name: ${RERANK_MODEL_NAME:BAAI/bge-reranker-v2-m3}
+  # 粗排召回数量倍数：实际召回 maxResults * candidate-multiplier 条候选再精排出前 maxResults 条
+  candidate-multiplier: 3
+  # 远程重排调用超时时间（毫秒），超时自动降级为本地/向量排序
+  timeout-ms: 5000
+
 # 预留：Milvus 向量数据库配置（后续切换时使用）
 # milvus:
 #   host: localhost

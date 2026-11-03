@@ -245,7 +245,8 @@ public class ReactKnowledgeBaseService {
                 EmbeddingService.SearchResult result = results.get(i);
                 sb.append(String.format("[%d] ", i + 1));
                 sb.append(result.getContent());
-                sb.append(String.format(" (相似度：%.2f, 来源：%s)\n\n", 
+                // getScore() 返回最终相关性分数（启用重排时为重排精排分数）
+                sb.append(String.format(" (相关度：%.2f, 来源：%s)\n\n", 
                     result.getScore(), result.getSource()));
             }
             
