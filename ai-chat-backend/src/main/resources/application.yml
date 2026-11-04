@@ -46,6 +46,19 @@ rerank:
   # 远程重排调用超时时间（毫秒），超时自动降级为本地/向量排序
   timeout-ms: 5000
 
+# 图 RAG（GraphRAG）功能配置：LLM 抽取实体关系构建知识图谱 + 一跳扩展增强问答
+graphrag:
+  # 总开关：false 时 /api/graph/chat 行为退化为纯向量 RAG（不查询图谱）
+  enabled: true
+  # 图中邻居扩展跳数（当前实现支持 1 跳）
+  max-hops: 1
+  # 每个问题最多参与图检索的种子实体数量
+  max-seed-entities: 5
+  # 最终注入提示词的关系三元组最大条数
+  max-triples-in-context: 20
+  # 实体抽取与问题实体识别使用的 LLM 温度
+  extraction-temperature: 0.0
+
 # 预留：Milvus 向量数据库配置（后续切换时使用）
 # milvus:
 #   host: localhost
