@@ -1,0 +1,61 @@
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:51: error: cannot find symbol
+                .connectTimeout(Duration.ofMillis(rerankConfig.getTimeoutMs()))
+                                                              ^
+  symbol:   method getTimeoutMs()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:60: error: cannot find symbol
+        return rerankConfig.isEnabled()
+                           ^
+  symbol:   method isEnabled()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:61: error: cannot find symbol
+                && rerankConfig.getApiUrl() != null
+                               ^
+  symbol:   method getApiUrl()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:62: error: cannot find symbol
+                && !rerankConfig.getApiUrl().isBlank();
+                                ^
+  symbol:   method getApiUrl()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:70: error: cannot find symbol
+        return rerankConfig.isEnabled();
+                           ^
+  symbol:   method isEnabled()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:78: error: cannot find symbol
+        return Math.max(1, rerankConfig.getCandidateMultiplier());
+                                       ^
+  symbol:   method getCandidateMultiplier()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:146: error: cannot find symbol
+                rerankConfig.getModelName(), query, documents, topN);
+                            ^
+  symbol:   method getModelName()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:150: error: cannot find symbol
+                .uri(URI.create(rerankConfig.getApiUrl()))
+                                            ^
+  symbol:   method getApiUrl()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:151: error: cannot find symbol
+                .timeout(Duration.ofMillis(rerankConfig.getTimeoutMs()))
+                                                       ^
+  symbol:   method getTimeoutMs()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:154: error: cannot find symbol
+        if (rerankConfig.getApiKey() != null && !rerankConfig.getApiKey().isBlank()) {
+                        ^
+  symbol:   method getApiKey()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:154: error: cannot find symbol
+        if (rerankConfig.getApiKey() != null && !rerankConfig.getApiKey().isBlank()) {
+                                                             ^
+  symbol:   method getApiKey()
+  location: variable rerankConfig of type RerankConfig
+/workspace/ai-chat-backend/src/main/java/com/example/aichat/service/RerankService.java:155: error: cannot find symbol
+            builder.header("Authorization", "Bearer " + rerankConfig.getApiKey());
+                                                                    ^
+  symbol:   method getApiKey()
+  location: variable rerankConfig of type RerankConfig
+12 errors
