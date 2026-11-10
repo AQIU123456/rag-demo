@@ -3,6 +3,7 @@ package com.example.aichat.service;
 import com.example.aichat.dto.DocumentResponse;
 import com.example.aichat.dto.DocumentUploadRequest;
 import com.example.aichat.entity.KnowledgeDocument;
+import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,11 +25,14 @@ public class KnowledgeDocumentService {
     
     private final KnowledgeDocumentRepository documentRepository;
     private final EmbeddingService embeddingService;
-    
+    private final DocumentChunkRepository chunkRepository;
+
     public KnowledgeDocumentService(KnowledgeDocumentRepository documentRepository,
-                                   EmbeddingService embeddingService) {
+                                    EmbeddingService embeddingService,
+                                    DocumentChunkRepository chunkRepository) {
         this.documentRepository = documentRepository;
         this.embeddingService = embeddingService;
+        this.chunkRepository = chunkRepository;
     }
 
     /**
@@ -375,6 +379,8 @@ public class KnowledgeDocumentService {
         if (!documentRepository.existsById(id)) {
             throw new RuntimeException("文档不存在，ID: " + id);
         }
+        // 删除旧的分块记录
+        chunkRepository.deleteByDocumentId(id);
         documentRepository.deleteById(id);
         // 注意：向量化数据在内存中，暂不处理清理逻辑
         // 切换到 Milvus 后需要在此处清理对应的向量数据
