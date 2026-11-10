@@ -7,7 +7,8 @@
 |---|---|
 | `doc1_upload.json` ~ `doc5_upload.json` | 知识库投毒文档（含恶意内容），用于间接注入测试 |
 | `chat_payloads.jsonl` | 11 条聊天框 Payload，按前端页面分组 |
-| `test.sh` | 可选：curl 一键自动化脚本（验证后端接口链路） |
+| `test.sh` | 可选：curl 一键自动化脚本（Linux/macOS/Git Bash） |
+| `test.ps1` | 可选：PowerShell 等价版（Windows 原生，无需装 bash） |
 
 ## 前置条件
 ```bash
@@ -68,4 +69,5 @@ cd ai-chat-frontend && npm install && npm run dev                 # 前端
 ## 四、注意事项
 - LLM 输出有随机性，建议每条 Payload 测 2~3 次记录命中率。
 - 测试完成后删除 doc1/doc2/doc3/doc5 投毒文档，否则后续正常使用 RAG 时仍会被触发。
-- `bash test.sh` 可脱离前端直接打接口验证同一批数据。
+- `bash test.sh` 可脱离前端直接打接口验证同一批数据（Linux/macOS/Git Bash）。
+- **Windows 用户**请改用等价的 PowerShell 版：`powershell -ExecutionPolicy Bypass -File .\test.ps1`（无需安装任何额外软件，8 个用例与 test.sh 一一对应）。
