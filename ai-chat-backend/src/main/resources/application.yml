@@ -28,7 +28,7 @@ langchain4j:
     embedding-model:
       api-key: ${OPENAI_API_KEY_ST}
       base-url: ${OPENAI_API_HOME_URL_ST}
-      model-name: Qwen/Qwen3-VL-Embedding-8B
+      model-name: qwen3.7-text-embedding-flash
 
 # 重排（Rerank）功能配置：向量粗排召回 -> 交叉编码器精排
 rerank:
