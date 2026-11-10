@@ -2,6 +2,7 @@ package com.example.aichat.service;
 
 import com.example.aichat.dto.DocumentResponse;
 import com.example.aichat.dto.DocumentUploadRequest;
+import com.example.aichat.security.PromptInjectionGuard;
 import com.example.aichat.entity.KnowledgeDocument;
 import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
@@ -43,7 +44,8 @@ public class KnowledgeDocumentService {
         List<KnowledgeDocument> documents = documentRepository.findAll();
         for (KnowledgeDocument doc : documents) {
             try {
-                embeddingService.embedAndStore(doc.getContent(), "doc_" + doc.getId());
+                embeddingService.embedAndStore(
+                        PromptInjectionGuard.sanitizeDocument(doc.getContent()), "doc_" + doc.getId());
                 System.out.println("重新嵌入文档: " + doc.getTitle());
             } catch (Exception e) {
                 System.err.println("重新嵌入文档失败 (" + doc.getTitle() + "): " + e.getMessage());
@@ -61,13 +63,15 @@ public class KnowledgeDocumentService {
             throw new IllegalArgumentException("文档内容不能为空");
         }
         
-        String content = request.getContent().trim();
+        String content = PromptInjectionGuard.sanitizeDocument(request.getContent());
         int wordCount = countWords(content);
         long fileSize = content.getBytes().length;
         
         KnowledgeDocument document = KnowledgeDocument.builder()
-                .title(request.getTitle() != null ? request.getTitle() : "未命名文档")
-                .description(request.getDescription())
+                .title(PromptInjectionGuard.sanitizeLabel(
+                        request.getTitle() != null ? request.getTitle() : "未命名文档"))
+                .description(request.getDescription() == null ? null
+                        : PromptInjectionGuard.sanitizeLabel(request.getDescription()))
                 .content(content)
                 .fileType(request.getFileType() != null ? request.getFileType() : "txt")
                 .fileSize(fileSize)
@@ -394,13 +398,13 @@ public class KnowledgeDocumentService {
                 .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + id));
         
         if (request.getTitle() != null) {
-            document.setTitle(request.getTitle());
+            document.setTitle(PromptInjectionGuard.sanitizeLabel(request.getTitle()));
         }
         if (request.getDescription() != null) {
-            document.setDescription(request.getDescription());
+            document.setDescription(PromptInjectionGuard.sanitizeLabel(request.getDescription()));
         }
         if (request.getContent() != null) {
-            String content = request.getContent().trim();
+            String content = PromptInjectionGuard.sanitizeDocument(request.getContent());
             document.setContent(content);
             document.setWordCount(countWords(content));
             document.setFileSize((long) content.getBytes().length);

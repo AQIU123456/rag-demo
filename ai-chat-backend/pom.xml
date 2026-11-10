@@ -88,6 +88,19 @@
     
     <build>
         <plugins>
+            <!--
+                离线构建环境的本地仓库只预置了 surefire 2.22.2 的 JUnit Platform provider，
+                显式锁定该版本以保证 `mvn -o test` 可直接运行（含新增的注入回归套件）。
+                联网环境可移除本声明，使用 Spring Boot parent 默认管理的较新版本。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.22.2</version>
+                <configuration>
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
