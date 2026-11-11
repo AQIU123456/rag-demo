@@ -1,6 +1,8 @@
 package com.example.aichat.service;
 
+import com.example.aichat.security.PromptInjectionGuard;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
@@ -35,7 +37,8 @@ public class RagService {
     public RagResponse answerWithRag(String question, int maxResults) {
         // 1. 从知识库中检索相关文档片段
         List<EmbeddingService.SearchResult> searchResults = 
-            embeddingService.searchSimilar(question, maxResults);
+            embeddingService.searchSimilar(
+                PromptInjectionGuard.sanitizeUserInput(question), maxResults);
         
         // 2. 构建上下文内容
         String context = buildContext(searchResults);
@@ -44,7 +47,7 @@ public class RagService {
         String systemPrompt = buildSystemPrompt(context);
         
         // 4. 调用 LLM 生成答案
-        String answer = generateAnswer(systemPrompt, question);
+        String answer = generateAnswer(systemPrompt, context, question);
         
         // 5. 提取引用来源
         List<Citation> citations = extractCitations(searchResults);
@@ -66,7 +69,7 @@ public class RagService {
         for (int i = 0; i < searchResults.size(); i++) {
             EmbeddingService.SearchResult result = searchResults.get(i);
             contextBuilder.append(String.format("[%d] ", i + 1));
-            contextBuilder.append(result.getContent());
+            contextBuilder.append(PromptInjectionGuard.sanitizeDocument(result.getContent()));
             // getScore() 返回最终相关性分数（启用重排时为重排精排分数）
             contextBuilder.append(String.format(" (相关度：%.2f)\n\n", result.getScore()));
         }
@@ -78,29 +81,37 @@ public class RagService {
      * 构建系统提示词
      */
     private String buildSystemPrompt(String context) {
-        return "你是一个专业的企业知识库助手。请根据以下提供的知识库内容来回答用户的问题。\n" +
-               "要求：\n" +
-               "1. 只基于提供的知识库内容进行回答，不要编造信息\n" +
+        // 安全修复：不可信的检索上下文不再拼接进 SystemMessage。
+        // context 参数保留以兼容既有调用链，实际由 generateAnswer 放进独立 UserMessage 定界块。
+        return PromptInjectionGuard.systemInstructions(
+               "1. 只基于 <UNTRUSTED_DATA> 块中提供的知识库内容回答，不要编造信息\n" +
                "2. 如果知识库中没有相关信息，请明确告知用户\n" +
                "3. 回答要准确、简洁、专业\n" +
                "4. 在回答中引用相关内容的编号，例如 [1]、[2]\n" +
-               "5. 如果有多条相关信息，请综合整理后回答\n" +
-               "\n" +
-               context +
-               "\n" +
-               "请根据以上知识库内容回答用户的问题。";
+               "5. 如果有多条相关信息，请综合整理后回答");
     }
 
     /**
      * 调用 LLM 生成答案
      */
     private String generateAnswer(String systemPrompt, String question) {
+        return generateAnswer(systemPrompt, "", question);
+    }
+
+    /**
+     * 指令/数据分层后的生成入口：SystemMessage 只放固定指令；
+     * 检索上下文与用户问题分别封装为独立的 UserMessage 定界块。
+     */
+    private String generateAnswer(String systemPrompt, String context, String question) {
         try {
-            Response<AiMessage> response = chatLanguageModel.generate(
+            List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt),
-                UserMessage.from(question)
+                UserMessage.from(PromptInjectionGuard.wrapAsData(context, "知识库检索结果")),
+                UserMessage.from(PromptInjectionGuard.wrapAsData(
+                    PromptInjectionGuard.sanitizeUserInput(question), "用户问题"))
             );
-            return response.content().text();
+            Response<AiMessage> response = chatLanguageModel.generate(messages);
+            return PromptInjectionGuard.guardOutput(response.content().text(), systemPrompt);
         } catch (Exception e) {
             return "抱歉，生成答案时出现错误：" + e.getMessage();
         }
@@ -112,9 +123,9 @@ public class RagService {
     private List<Citation> extractCitations(List<EmbeddingService.SearchResult> searchResults) {
         return searchResults.stream()
             .map(result -> new Citation(
-                result.getContent(),
+                PromptInjectionGuard.sanitizeDocument(result.getContent()),
                 result.getScore(),
-                result.getSource()
+                PromptInjectionGuard.sanitizeLabel(result.getSource())
             ))
             .collect(Collectors.toList());
     }

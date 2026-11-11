@@ -2,6 +2,7 @@ package com.example.aichat.service;
 
 import com.example.aichat.dto.DocumentChunkDTO;
 import com.example.aichat.entity.DocumentChunk;
+import com.example.aichat.security.PromptInjectionGuard;
 import com.example.aichat.entity.KnowledgeDocument;
 import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.repository.DocumentChunkRepository;
@@ -92,8 +93,8 @@ public class DocumentChunkService {
         DocumentChunk chunk = chunkRepository.findById(chunkId)
                 .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkId));
         
-        // 更新分块内容
-        chunk.setContent(newContent);
+        // 更新分块内容（源头消毒，防止通过分块编辑接口投放注入载荷）
+        chunk.setContent(PromptInjectionGuard.sanitizeDocument(newContent));
         DocumentChunk updated = chunkRepository.save(chunk);
         
         // 重新生成该分块的向量嵌入

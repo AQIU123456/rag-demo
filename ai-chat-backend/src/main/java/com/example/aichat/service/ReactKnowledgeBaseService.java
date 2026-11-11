@@ -1,5 +1,6 @@
 package com.example.aichat.service;
 
+import com.example.aichat.security.PromptInjectionGuard;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.*;
@@ -90,12 +91,14 @@ public class ReactKnowledgeBaseService {
         List<ToolSpecification> toolSpecifications = buildToolSpecifications();
         
         // 构建系统提示词
-        String systemPrompt = String.format(REACT_SYSTEM_PROMPT, MAX_ITERATIONS);
+        String systemPrompt = PromptInjectionGuard.systemInstructions(
+                String.format(REACT_SYSTEM_PROMPT, MAX_ITERATIONS));
         
         // 初始化消息历史
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(new SystemMessage(systemPrompt));
-        messages.add(new UserMessage(question));
+        messages.add(UserMessage.from(PromptInjectionGuard.wrapAsData(
+                PromptInjectionGuard.sanitizeUserInput(question), "用户问题")));
         
         int iteration = 0;
         String finalAnswer = null;
@@ -124,14 +127,16 @@ public class ReactKnowledgeBaseService {
                     // 记录行动和观察
                     steps.add(new ReactStep(
                         StepType.ACTION,
-                        request.name(),
+                        PromptInjectionGuard.sanitizeToolArgument(request.name()),
                         parseArguments(request.arguments()),
-                        result
+                        PromptInjectionGuard.sanitizeToolResult(result)
                     ));
                     
                     // 将工具结果添加到消息历史
                     messages.add(aiMessage);
-                    messages.add(ToolExecutionResultMessage.from(request, result));
+                    messages.add(ToolExecutionResultMessage.from(request,
+                            PromptInjectionGuard.wrapAsData(
+                                PromptInjectionGuard.sanitizeToolResult(result), "工具返回数据")));
                 }
                 
                 // 继续下一轮推理
@@ -156,11 +161,14 @@ public class ReactKnowledgeBaseService {
         if (finalAnswer == null) {
             messages.add(new SystemMessage("已达到最大推理次数，请根据已有信息给出最佳回答。"));
             Response<AiMessage> finalResponse = chatLanguageModel.generate(messages);
-            finalAnswer = finalResponse.content().text();
+            finalAnswer = PromptInjectionGuard.guardOutput(finalResponse.content().text(), systemPrompt);
             steps.add(new ReactStep(StepType.FINAL_ANSWER, finalAnswer, null, null));
         }
         
-        return new ReactResponse(finalAnswer, steps, question);
+        return new ReactResponse(
+                PromptInjectionGuard.guardOutput(finalAnswer, systemPrompt),
+                steps,
+                PromptInjectionGuard.sanitizeUserInput(question));
     }
 
     /**
@@ -209,16 +217,19 @@ public class ReactKnowledgeBaseService {
                 
             case "weather_query":
                 Map<String, Object> weatherArgs = parseArguments(request.arguments());
-                String city = (String) weatherArgs.get("city");
-                if (city == null || city.isEmpty()) {
+                String city = PromptInjectionGuard.sanitizeToolArgument(
+                        String.valueOf(weatherArgs.getOrDefault("city", "")));
+                if (city.isEmpty()) {
                     city = "北京";
                 }
                 return executeWeatherQuery(city);
                 
             case "order_query":
                 Map<String, Object> orderArgs = parseArguments(request.arguments());
-                String orderId = (String) orderArgs.get("orderId");
-                String customerName = (String) orderArgs.get("customerName");
+                String orderId = PromptInjectionGuard.sanitizeToolArgument(
+                        String.valueOf(orderArgs.getOrDefault("orderId", "")));
+                String customerName = PromptInjectionGuard.sanitizeToolArgument(
+                        String.valueOf(orderArgs.getOrDefault("customerName", "")));
                 return executeOrderQuery(orderId, customerName);
                 
             default:
@@ -244,10 +255,10 @@ public class ReactKnowledgeBaseService {
             for (int i = 0; i < results.size(); i++) {
                 EmbeddingService.SearchResult result = results.get(i);
                 sb.append(String.format("[%d] ", i + 1));
-                sb.append(result.getContent());
+                sb.append(PromptInjectionGuard.sanitizeDocument(result.getContent()));
                 // getScore() 返回最终相关性分数（启用重排时为重排精排分数）
                 sb.append(String.format(" (相关度：%.2f, 来源：%s)\n\n", 
-                    result.getScore(), result.getSource()));
+                    result.getScore(), PromptInjectionGuard.sanitizeLabel(result.getSource())));
             }
             
             return sb.toString();
@@ -276,8 +287,8 @@ public class ReactKnowledgeBaseService {
      * 执行订单查询（Mock 实现）
      */
     private String executeOrderQuery(String orderId, String customerName) {
-        if (orderId != null && !orderId.isEmpty()) {
-            // Mock 订单数据
+        if (PromptInjectionGuard.isValidOrderId(orderId)) {
+            // Mock 订单数据（订单号格式白名单）
             if ("ORD001".equals(orderId)) {
                 return "【订单详情】订单号：ORD001 | 收货人：张三 | 状态：已发货 | 金额：¥299.00 | 日期：2024-01-15";
             } else if ("ORD002".equals(orderId)) {
@@ -285,7 +296,7 @@ public class ReactKnowledgeBaseService {
             } else {
                 return "未找到订单号为 " + orderId + " 的订单信息。";
             }
-        } else if (customerName != null && !customerName.isEmpty()) {
+        } else if (customerName != null && !customerName.isEmpty() && customerName.length() <= 20) {
             return "【客户订单】" + customerName + " 共有 2 个订单：ORD001(已发货), ORD003(已完成)";
         } else {
             return "错误：需要提供订单号或客户姓名";
@@ -316,30 +327,11 @@ public class ReactKnowledgeBaseService {
     /**
      * 解析 JSON 参数字符串为 Map
      */
-    @SuppressWarnings("unchecked")
+    /**
+     * 解析 JSON 参数字符串为 Map（统一改用 Guard 的稳健 JSON 解析，避免转义绕过）
+     */
     private Map<String, Object> parseArguments(String arguments) {
-        if (arguments == null || arguments.isEmpty()) {
-            return new java.util.HashMap<>();
-        }
-        
-        // 简单 JSON 解析
-        String clean = arguments.trim();
-        if (clean.startsWith("{") && clean.endsWith("}")) {
-            clean = clean.substring(1, clean.length() - 1).trim();
-        }
-        
-        Map<String, Object> result = new java.util.HashMap<>();
-        String[] pairs = clean.split(",");
-        for (String pair : pairs) {
-            String[] keyValue = pair.split(":");
-            if (keyValue.length == 2) {
-                String key = keyValue[0].trim().replace("\"", "");
-                String value = keyValue[1].trim().replace("\"", "").trim();
-                result.put(key, value);
-            }
-        }
-        
-        return result;
+        return PromptInjectionGuard.parseToolArguments(arguments);
     }
 
     /**
