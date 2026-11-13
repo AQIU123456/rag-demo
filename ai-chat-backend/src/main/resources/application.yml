@@ -59,7 +59,34 @@ graphrag:
   # 实体抽取与问题实体识别使用的 LLM 温度
   extraction-temperature: 0.0
 
-# 预留：Milvus 向量数据库配置（后续切换时使用）
+# 企业级分块流水线配置（S1 链路收敛 / S2 结构增强 / S3 混合召回）
+# A/B 对照组：把 structure-aware / context-prefix / bm25-enabled 全置 false 即为基线
+chunk:
+  max-tokens: 300
+  overlap-tokens: 40
+  parent-max-tokens: 900
+  hard-max-chars: 4000
+  # S2 能力：结构感知 + 上下文前缀（关闭即为 S1 基线，便于 RAGAS A/B）
+  structure-aware: true
+  context-prefix: true
+  # 父子索引：全局默认关，前端选 PARENT_CHILD 策略时按次开启
+  parent-child: false
+  neighbor-window: 0
+  max-per-document: 3
+  active-version: v1
+  recall-multiplier: 6
+  min-score: 0.0
+  # S3 能力：BM25 关键词通道 + RRF 融合
+  bm25-enabled: true
+  rrf-k: 60
+  keyword-candidates: 30
+  # 接入真实鉴权后再打开，否则会误伤无租户标记的存量数据
+  tenant-filter-enabled: false
+  current-tenant: default
+  current-acl-tag: public
+  observability: true
+
+# 预留：Milvus 向量数据库配置（S3 物理删除切换时使用）
 # milvus:
 #   host: localhost
 #   port: 19530

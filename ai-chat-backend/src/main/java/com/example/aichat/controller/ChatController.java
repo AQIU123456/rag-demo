@@ -97,6 +97,10 @@ public class ChatController {
                             .content(citation.getContent())
                             .score(citation.getScore())
                             .source(citation.getSource())
+                            .chunkId(citation.getChunkId())
+                            .documentId(citation.getDocumentId())
+                            .documentTitle(citation.getDocumentTitle())
+                            .sectionPath(citation.getSectionPath())
                             .build())
                     .collect(Collectors.toList());
 

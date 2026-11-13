@@ -69,7 +69,10 @@ public class RagService {
         for (int i = 0; i < searchResults.size(); i++) {
             EmbeddingService.SearchResult result = searchResults.get(i);
             contextBuilder.append(String.format("[%d] ", i + 1));
-            contextBuilder.append(PromptInjectionGuard.sanitizeDocument(result.getContent()));
+            // 检索单元 ≠ 生成单元：父子 / 相邻块扩展后的上下文送 LLM，引用仍展示命中块原文
+            String forLlm = result.getContextText() != null
+                    ? result.getContextText() : result.getContent();
+            contextBuilder.append(PromptInjectionGuard.sanitizeDocument(forLlm));
             // getScore() 返回最终相关性分数（启用重排时为重排精排分数）
             contextBuilder.append(String.format(" (相关度：%.2f)\n\n", result.getScore()));
         }
@@ -125,7 +128,11 @@ public class RagService {
             .map(result -> new Citation(
                 PromptInjectionGuard.sanitizeDocument(result.getContent()),
                 result.getScore(),
-                PromptInjectionGuard.sanitizeLabel(result.getSource())
+                PromptInjectionGuard.sanitizeLabel(result.getSource()),
+                result.getChunkId(),
+                result.getDocumentId(),
+                result.getDocumentTitle(),
+                result.getSectionPath()
             ))
             .collect(Collectors.toList());
     }
@@ -172,23 +179,34 @@ public class RagService {
         private final String content;
         private final double score;
         private final String source;
+        // 引用溯源（纯增量）
+        private final String chunkId;
+        private final Long documentId;
+        private final String documentTitle;
+        private final String sectionPath;
 
+        /** 保留旧构造签名，避免破坏既有调用方 */
         public Citation(String content, double score, String source) {
+            this(content, score, source, null, null, null, null);
+        }
+
+        public Citation(String content, double score, String source,
+                        String chunkId, Long documentId, String documentTitle, String sectionPath) {
             this.content = content;
             this.score = score;
             this.source = source;
+            this.chunkId = chunkId;
+            this.documentId = documentId;
+            this.documentTitle = documentTitle;
+            this.sectionPath = sectionPath;
         }
 
-        public String getContent() {
-            return content;
-        }
-
-        public double getScore() {
-            return score;
-        }
-
-        public String getSource() {
-            return source;
-        }
+        public String getContent() { return content; }
+        public double getScore() { return score; }
+        public String getSource() { return source; }
+        public String getChunkId() { return chunkId; }
+        public Long getDocumentId() { return documentId; }
+        public String getDocumentTitle() { return documentTitle; }
+        public String getSectionPath() { return sectionPath; }
     }
 }

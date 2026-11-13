@@ -126,6 +126,35 @@ rag-eval/
 - 启动时做 3 秒健康检查，连不上立即报错退出（可用 `--no-health-check` 跳过）；
 - 每条请求实时打印 `[i/N] 请求...`、耗时与成功/失败原因。
 
+## 分块专属指标（chunk_metrics.py）
+
+`evaluate_rag.py` 的 RAGAS 四指标只评估端到端答案，分不出「检索没召回」和「生成没用好」。
+`chunk_metrics.py` 直接分析 `/api/chat/rag` 返回的 `citations`，度量分块与索引本身：
+
+| 指标 | 含义 |
+|---|---|
+| `chunk_recall@k` | 标准答案字符 bigram 被 top-k 片段覆盖的比例 |
+| `context_completeness` | 命中片段以完整句/表格行结尾的比例（是否切成半句） |
+| `duplicate_rate` / `section_coverage` / `traceability` | 重复块率、章节路径覆盖率、引用可定位率 |
+| `ghost_rate` | 命中已删除文档特征串的占比（幽灵向量） |
+| `truncation_rate` / `avg|max_tokens` | 分块表块长分布（需 `--chunks-base`） |
+
+```bash
+python -u chunk_metrics.py --questions sample_questions.json \
+  --backend http://localhost:8080/api/chat/rag \
+  --deleted-markers deleted_markers.txt \
+  --chunks-base http://localhost:8080/api/knowledge/chunks --doc-ids 1,2,3 \
+  -o chunk_metrics.csv
+```
+
+`deleted_markers.txt` 每行写一句「已删除文档中的独特句子」。脚本只用 `requests` + 标准库，
+**不需要 RAGAS 或 judge 模型**，因此可在 A/B 每轮快速跑一遍。
+
+A/B 口径：对照组把 `application.yml` 的 `chunk.structure-aware / context-prefix / bm25-enabled`
+全置 `false`，实验组置 `true`，固定同一问题集跑两组；**判定规则**是实验组 `context_recall`
+不低于对照组、`faithfulness` 不下降，且重复块率/幽灵率为 0。当前 `sample_questions.json`
+只有 3 条，正式 A/B 前请按真实语料扩充到 ≥30 条（多章节、跨节、表格、精确数字）。
+
 ## 注意
 
 - 本环境当前无法直接跑通端到端评估：后端未启动且缺少 `OPENAI_API_KEY` 环境变量。

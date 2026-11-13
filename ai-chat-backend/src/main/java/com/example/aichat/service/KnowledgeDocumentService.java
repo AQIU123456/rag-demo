@@ -3,6 +3,7 @@ package com.example.aichat.service;
 import com.example.aichat.dto.DocumentResponse;
 import com.example.aichat.dto.DocumentUploadRequest;
 import com.example.aichat.security.PromptInjectionGuard;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.example.aichat.entity.KnowledgeDocument;
 import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
@@ -27,31 +28,72 @@ public class KnowledgeDocumentService {
     private final KnowledgeDocumentRepository documentRepository;
     private final EmbeddingService embeddingService;
     private final DocumentChunkRepository chunkRepository;
+    private final ChunkIndexingService chunkIndexingService;
 
+    /**
+     * 保留原三参构造签名（注入回归测试与外部调用方直接 new 的场景）。
+     * 此时索引编排器为空，写路径优雅降级为「只保存文档、不建索引」。
+     */
     public KnowledgeDocumentService(KnowledgeDocumentRepository documentRepository,
                                     EmbeddingService embeddingService,
                                     DocumentChunkRepository chunkRepository) {
+        this(documentRepository, embeddingService, chunkRepository, null);
+    }
+
+    @Autowired
+    public KnowledgeDocumentService(KnowledgeDocumentRepository documentRepository,
+                                    EmbeddingService embeddingService,
+                                    DocumentChunkRepository chunkRepository,
+                                    ChunkIndexingService chunkIndexingService) {
         this.documentRepository = documentRepository;
         this.embeddingService = embeddingService;
         this.chunkRepository = chunkRepository;
+        this.chunkIndexingService = chunkIndexingService;
+    }
+
+    private void scheduleIndex(Long docId) {
+        if (chunkIndexingService != null && docId != null) {
+            chunkIndexingService.indexAfterCommit(docId);
+        }
+    }
+
+    private void scheduleRemove(Long docId) {
+        if (chunkIndexingService != null && docId != null) {
+            chunkIndexingService.removeByDocIdAfterCommit(docId);
+        }
+    }
+
+    private int rebuildNow(KnowledgeDocument doc) {
+        return chunkIndexingService == null ? 0 : chunkIndexingService.indexNow(doc, null);
     }
 
     /**
-     * 启动时重新嵌入所有已有文档（解决 InMemoryEmbeddingStore 重启丢失的问题）
+     * 启动时从「单一事实源」重建索引（解决 InMemoryEmbeddingStore 重启丢失的问题）。
+     *
+     * <p>必须重新跑 {@link ChunkPipeline#split}：document_chunks 表只存原文 content，
+     * 带上下文前缀的送嵌文本不落库，直接拿表里 content 送嵌入会导致 hash 与向量错位。</p>
      */
     @PostConstruct
     public void reEmbedExistingDocuments() {
-        List<KnowledgeDocument> documents = documentRepository.findAll();
+        List<KnowledgeDocument> documents;
+        try {
+            documents = documentRepository.findAll();
+        } catch (Exception e) {
+            System.err.println("启动重建跳过：数据库不可用 - " + e.getMessage());
+            return;
+        }
+        int ok = 0;
         for (KnowledgeDocument doc : documents) {
             try {
-                embeddingService.embedAndStore(
-                        PromptInjectionGuard.sanitizeDocument(doc.getContent()), "doc_" + doc.getId());
-                System.out.println("重新嵌入文档: " + doc.getTitle());
+                int count = rebuildNow(doc);
+                ok++;
+                System.out.println("重建索引完成: " + doc.getTitle() + " (" + count + " 块)");
             } catch (Exception e) {
-                System.err.println("重新嵌入文档失败 (" + doc.getTitle() + "): " + e.getMessage());
+                // 单个文档失败不阻断启动
+                System.err.println("重建索引失败 (" + doc.getTitle() + "): " + e.getMessage());
             }
         }
-        System.out.println("文档重嵌入完成，共处理 " + documents.size() + " 个文档");
+        System.out.println("索引重建完成，共处理 " + documents.size() + " 个文档，成功 " + ok + " 个");
     }
     
     /**
@@ -79,14 +121,10 @@ public class KnowledgeDocumentService {
                 .build();
         
         KnowledgeDocument saved = documentRepository.save(document);
-        
-        // 阶段 2: 将文档内容进行向量化处理
-        try {
-            embeddingService.embedAndStore(content, "doc_" + saved.getId());
-        } catch (Exception e) {
-            // 向量化失败不影响文档保存，记录日志即可
-            System.err.println("文档向量化失败：" + e.getMessage());
-        }
+
+        // 统一写路径：事务提交后由 ChunkIndexingService 落分块表 + 重建向量索引。
+        // 不再调 embedAndStore，避免同一文档被索引两次；索引失败不影响文档保存。
+        scheduleIndex(saved.getId());
         
         return toDocumentResponse(saved);
     }
@@ -386,8 +424,8 @@ public class KnowledgeDocumentService {
         // 删除旧的分块记录
         chunkRepository.deleteByDocumentId(id);
         documentRepository.deleteById(id);
-        // 注意：向量化数据在内存中，暂不处理清理逻辑
-        // 切换到 Milvus 后需要在此处清理对应的向量数据
+        // 删除闭环：提交后把该文档的全部向量 id 置入墓碑，检索侧立即不再召回（幽灵向量 = 0）
+        scheduleRemove(id);
     }
     
     /**
@@ -396,9 +434,12 @@ public class KnowledgeDocumentService {
     public DocumentResponse updateDocument(Long id, DocumentUploadRequest request) {
         KnowledgeDocument document = documentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + id));
-        
+
+        // 标题参与上下文前缀，正文参与切分，两者任一变更都必须重建索引
+        boolean needsReindex = false;
         if (request.getTitle() != null) {
             document.setTitle(PromptInjectionGuard.sanitizeLabel(request.getTitle()));
+            needsReindex = true;
         }
         if (request.getDescription() != null) {
             document.setDescription(PromptInjectionGuard.sanitizeLabel(request.getDescription()));
@@ -408,9 +449,13 @@ public class KnowledgeDocumentService {
             document.setContent(content);
             document.setWordCount(countWords(content));
             document.setFileSize((long) content.getBytes().length);
+            needsReindex = true;
         }
         
         KnowledgeDocument updated = documentRepository.save(document);
+        if (needsReindex) {
+            scheduleIndex(id);
+        }
         return toDocumentResponse(updated);
     }
     

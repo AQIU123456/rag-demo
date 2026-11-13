@@ -1,289 +1,225 @@
 package com.example.aichat.service;
 
+import com.example.aichat.config.ChunkProperties;
+import com.example.aichat.domain.chunk.Chunk;
+import com.example.aichat.domain.chunk.ChunkPolicy;
 import com.example.aichat.dto.DocumentChunkDTO;
 import com.example.aichat.entity.DocumentChunk;
-import com.example.aichat.security.PromptInjectionGuard;
 import com.example.aichat.entity.KnowledgeDocument;
 import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
-import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.DocumentSplitter;
-import dev.langchain4j.data.document.splitter.DocumentSplitters;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingStore;
+import com.example.aichat.security.PromptInjectionGuard;
+import dev.langchain4j.model.Tokenizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 文档分块管理服务
- * 提供分块的查看、编辑、重新生成等功能
+ * 文档分块管理服务：所有写操作委托给 {@link ChunkIndexingService} / {@link ChunkIndex}，
+ * 本类只负责 DTO 映射与「分块级手工覆盖」的重建。
+ *
+ * <p>已删除原先的 4 套硬编码 splitter 与空格分词 Jaccard 伪语义切分
+ * （中文无空格时会把全文并成一块，且无长度上限）。</p>
  */
 @Service
 @Transactional
 public class DocumentChunkService {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentChunkService.class);
+
     private final DocumentChunkRepository chunkRepository;
     private final KnowledgeDocumentRepository documentRepository;
-    private final EmbeddingModel embeddingModel;
-    private final EmbeddingStore<TextSegment> embeddingStore;
+    private final ChunkIndexingService chunkIndexingService;
+    private final ChunkPipeline chunkPipeline;
+    private final ChunkIndex chunkIndex;
+    private final ChunkProperties props;
+    private final Tokenizer tokenizer;
 
     public DocumentChunkService(DocumentChunkRepository chunkRepository,
                                 KnowledgeDocumentRepository documentRepository,
-                                EmbeddingModel embeddingModel,
-                                EmbeddingStore<TextSegment> embeddingStore) {
+                                ChunkIndexingService chunkIndexingService,
+                                ChunkPipeline chunkPipeline,
+                                ChunkIndex chunkIndex,
+                                ChunkProperties props,
+                                Tokenizer tokenizer) {
         this.chunkRepository = chunkRepository;
         this.documentRepository = documentRepository;
-        this.embeddingModel = embeddingModel;
-        this.embeddingStore = embeddingStore;
+        this.chunkIndexingService = chunkIndexingService;
+        this.chunkPipeline = chunkPipeline;
+        this.chunkIndex = chunkIndex;
+        this.props = props;
+        this.tokenizer = tokenizer;
     }
 
-    /**
-     * 获取分块器（根据策略）
-     */
-    private DocumentSplitter getSplitter(ChunkStrategy strategy) {
-        switch (strategy) {
-            case SEMANTIC:
-                // 语义切分：使用较小的块和较大的重叠，配合后续语义优化
-                return DocumentSplitters.recursive(300, 150);
-            case PARENT_CHILD:
-                // 父子索引：小块用于检索
-                return DocumentSplitters.recursive(256, 50);
-            case RECURSIVE:
-            default:
-                // 递归字符切分（默认）：每块 512 字符，重叠 100 字符
-                return DocumentSplitters.recursive(512, 100);
-        }
-    }
-
-    /**
-     * 获取文档的所有分块
-     */
+    /** 获取文档的所有分块 */
     @Transactional(readOnly = true)
     public List<DocumentChunkDTO> getChunksByDocumentId(Long documentId) {
         KnowledgeDocument document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + documentId));
-        
+
         List<DocumentChunk> chunks = chunkRepository.findByDocumentIdOrderByChunkIndex(documentId);
-        
-        return chunks.stream()
-                .map(chunk -> DocumentChunkDTO.builder()
-                        .id(chunk.getId())
-                        .documentId(chunk.getDocument().getId())
-                        .documentTitle(document.getTitle())
-                        .content(chunk.getContent())
-                        .chunkIndex(chunk.getChunkIndex())
-                        .metadata(chunk.getMetadata())
-                        .createdAt(chunk.getCreatedAt())
-                        .build())
-                .collect(Collectors.toList());
+        String title = document.getTitle();
+        return chunks.stream().map(c -> toDTO(c, title)).collect(Collectors.toList());
     }
 
     /**
-     * 更新单个分块内容
+     * 更新单个分块内容。
+     * 手工覆盖的分块写回表后，以「表内行」为事实源重建整个文档的向量索引，
+     * 因此不会产生只 add 不删的幽灵向量。后续文档正文变更时会重新按全文切分（文档为最终事实源）。
      */
     public DocumentChunkDTO updateChunk(Long chunkId, String newContent) {
         DocumentChunk chunk = chunkRepository.findById(chunkId)
                 .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkId));
-        
-        // 更新分块内容（源头消毒，防止通过分块编辑接口投放注入载荷）
+
+        // 源头消毒，防止通过分块编辑接口投放注入载荷
         chunk.setContent(PromptInjectionGuard.sanitizeDocument(newContent));
         DocumentChunk updated = chunkRepository.save(chunk);
-        
-        // 重新生成该分块的向量嵌入
+        Long docId = updated.getDocument().getId();
+
         try {
-            regenerateEmbedding(updated);
+            reindexFromRows(docId);
         } catch (Exception e) {
-            System.err.println("重新生成向量嵌入失败：" + e.getMessage());
+            log.warn("分块编辑后重建索引失败 docId={} reason={}", docId, e.getMessage());
         }
-        
-        KnowledgeDocument document = chunk.getDocument();
-        return DocumentChunkDTO.builder()
-                .id(updated.getId())
-                .documentId(document.getId())
-                .documentTitle(document.getTitle())
-                .content(updated.getContent())
-                .chunkIndex(updated.getChunkIndex())
-                .metadata(updated.getMetadata())
-                .createdAt(updated.getCreatedAt())
-                .build();
+
+        DocumentChunk reloaded = chunkRepository.findById(chunkId).orElse(updated);
+        return toDTO(reloaded, reloaded.getDocument().getTitle());
     }
 
-    /**
-     * 删除单个分块
-     */
+    /** 删除单个分块：删记录 + 重建该文档索引，检索侧不再召回已删内容 */
     public void deleteChunk(Long chunkId) {
         DocumentChunk chunk = chunkRepository.findById(chunkId)
                 .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkId));
-        
-        // 注意：向量存储在内存中，暂不处理清理逻辑
-        // 切换到 Milvus 后需要在此处清理对应的向量数据
-        
+        Long docId = chunk.getDocument().getId();
+
         chunkRepository.deleteById(chunkId);
+        chunkRepository.flush();
+        try {
+            reindexFromRows(docId);
+        } catch (Exception e) {
+            log.warn("分块删除后重建索引失败 docId={} reason={}", docId, e.getMessage());
+        }
     }
 
     /**
-     * 重新生成分块（基于当前文档内容重新切分）
+     * 重新生成分块：前端三种策略名保持不变，映射到新流水线的策略覆盖参数。
      */
     public List<DocumentChunkDTO> regenerateChunks(Long documentId, ChunkStrategy strategy) {
         KnowledgeDocument document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + documentId));
-        
-        // 删除旧的分块记录
-        chunkRepository.deleteByDocumentId(documentId);
-        
-        // 根据策略选择分块器
-        DocumentSplitter splitter = getSplitter(strategy);
-        
-        // 重新分块
-        Document doc = Document.from(document.getContent());
-        List<TextSegment> segments = splitter.split(doc);
-        
-        // 语义切分优化：合并语义相似的相邻块
-        if (strategy == ChunkStrategy.SEMANTIC) {
-            segments = optimizeSemanticSegments(segments);
-        }
-        
-        List<DocumentChunk> newChunks = new ArrayList<>();
-        for (int i = 0; i < segments.size(); i++) {
-            TextSegment segment = segments.get(i);
-            DocumentChunk chunk = DocumentChunk.builder()
-                    .document(document)
-                    .content(segment.text())
-                    .chunkIndex(i)
-                    .metadata(segment.metadata().toString())
-                    .vectorDimension(embeddingModel.embed(segment).content().dimension())
-                    .build();
-            newChunks.add(chunk);
-        }
-        
-        // 保存新分块
-        List<DocumentChunk> savedChunks = chunkRepository.saveAll(newChunks);
-        
-        // 重新生成向量嵌入
-        try {
-            List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
-            for (int i = 0; i < embeddings.size(); i++) {
-                TextSegment segment = segments.get(i);
-                segment.metadata().put("source", "doc_" + documentId);
-                segment.metadata().put("chunk_id", String.valueOf(savedChunks.get(i).getId()));
-                segment.metadata().put("strategy", strategy.getCode());
-                embeddingStore.add(embeddings.get(i), segment);
-            }
-        } catch (Exception e) {
-            System.err.println("重新生成向量嵌入失败：" + e.getMessage());
-        }
-        
-        return savedChunks.stream()
-                .map(chunk -> DocumentChunkDTO.builder()
-                        .id(chunk.getId())
-                        .documentId(document.getId())
-                        .documentTitle(document.getTitle())
-                        .content(chunk.getContent())
-                        .chunkIndex(chunk.getChunkIndex())
-                        .metadata(chunk.getMetadata())
-                        .createdAt(chunk.getCreatedAt())
-                        .build())
-                .collect(Collectors.toList());
+
+        chunkIndexingService.indexNow(document, ChunkPolicy.of(strategy));
+
+        List<DocumentChunk> saved = chunkRepository.findByDocumentIdOrderByChunkIndex(documentId);
+        return saved.stream().map(c -> toDTO(c, document.getTitle())).collect(Collectors.toList());
     }
 
-    /**
-     * 语义切分优化：合并语义相似的相邻块
-     */
-    private List<TextSegment> optimizeSemanticSegments(List<TextSegment> segments) {
-        if (segments.size() <= 2) {
-            return segments;
-        }
-        
-        List<TextSegment> optimized = new ArrayList<>();
-        StringBuilder currentBuffer = new StringBuilder(segments.get(0).text());
-        
-        for (int i = 1; i < segments.size(); i++) {
-            TextSegment current = segments.get(i);
-            TextSegment previous = segments.get(i - 1);
-            
-            // 计算语义相似度（简化版：使用文本重叠率模拟）
-            double similarity = calculateTextSimilarity(previous.text(), current.text());
-            
-            // 如果相似度高，合并到当前块
-            if (similarity > 0.3) {
-                currentBuffer.append("\n").append(current.text());
-            } else {
-                // 相似度低，保存当前块并开始新块
-                optimized.add(TextSegment.from(currentBuffer.toString()));
-                currentBuffer = new StringBuilder(current.text());
-            }
-        }
-        
-        // 添加最后一个块
-        if (currentBuffer.length() > 0) {
-            optimized.add(TextSegment.from(currentBuffer.toString()));
-        }
-        
-        return optimized;
-    }
-
-    /**
-     * 计算文本相似度（简化版本，使用 Jaccard 相似度）
-     */
-    private double calculateTextSimilarity(String text1, String text2) {
-        String[] words1 = text1.toLowerCase().split("\\s+");
-        String[] words2 = text2.toLowerCase().split("\\s+");
-        
-        java.util.Set<String> set1 = new java.util.HashSet<>();
-        java.util.Set<String> set2 = new java.util.HashSet<>();
-        
-        for (String word : words1) set1.add(word);
-        for (String word : words2) set2.add(word);
-        
-        java.util.Set<String> intersection = new java.util.HashSet<>(set1);
-        intersection.retainAll(set2);
-        
-        java.util.Set<String> union = new java.util.HashSet<>(set1);
-        union.addAll(set2);
-        
-        if (union.isEmpty()) return 0.0;
-        return (double) intersection.size() / union.size();
-    }
-
-    /**
-     * 为单个分块重新生成向量嵌入
-     */
-    private void regenerateEmbedding(DocumentChunk chunk) {
-        try {
-            TextSegment segment = TextSegment.from(chunk.getContent());
-            segment.metadata().put("source", "doc_" + chunk.getDocument().getId());
-            segment.metadata().put("chunk_id", String.valueOf(chunk.getId()));
-            
-            Embedding embedding = embeddingModel.embed(segment).content();
-            
-            // 注意：InMemoryEmbeddingStore 不支持更新操作
-            // 这里只是添加新的向量，实际生产中应使用支持更新的向量库
-            embeddingStore.add(embedding, segment);
-        } catch (Exception e) {
-            System.err.println("重新生成向量嵌入失败：" + e.getMessage());
-            throw e;
-        }
-    }
-
-    /**
-     * 批量更新分块顺序（用于调整分块顺序）
-     */
+    /** 批量更新分块顺序，并同步重建受影响文档的索引（保证 prev/next 与父块关系正确） */
     public void updateChunkOrder(List<Long> chunkIds) {
+        Set<Long> affectedDocs = new LinkedHashSet<>();
         for (int i = 0; i < chunkIds.size(); i++) {
-            final int index = i;
-            final Long chunkId = chunkIds.get(i);
+            Long chunkId = chunkIds.get(i);
             DocumentChunk chunk = chunkRepository.findById(chunkId)
                     .orElseThrow(() -> new RuntimeException("分块不存在，ID: " + chunkId));
-            chunk.setChunkIndex(index);
+            chunk.setChunkIndex(i);
             chunkRepository.save(chunk);
+            affectedDocs.add(chunk.getDocument().getId());
         }
+        chunkRepository.flush();
+        for (Long docId : affectedDocs) {
+            try {
+                reindexFromRows(docId);
+            } catch (Exception e) {
+                log.warn("排序后重建索引失败 docId={} reason={}", docId, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 以 document_chunks 表内行为事实源重建送嵌文本并统一索引。
+     * 用于分块编辑 / 删除 / 排序这些「不重新切分全文」的操作。
+     */
+    private void reindexFromRows(Long docId) {
+        KnowledgeDocument doc = documentRepository.findById(docId)
+                .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + docId));
+        List<DocumentChunk> rows = chunkRepository.findByDocumentIdOrderByChunkIndex(docId);
+        String title = PromptInjectionGuard.sanitizeLabel(
+                doc.getTitle() == null ? "未命名文档" : doc.getTitle());
+
+        List<Chunk> chunks = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            DocumentChunk row = rows.get(i);
+            String embedded = chunkPipeline.embedText(title, row.getSectionPath(), row.getContent());
+            String hash = ChunkPipeline.sha256(embedded);
+            int tokens = tokenizer.estimateTokenCountInText(embedded);
+            chunks.add(Chunk.builder()
+                    .documentId(docId)
+                    .documentTitle(title)
+                    .index(i)
+                    .chunkKey("doc_" + docId + "_" + i + "_" + hash.substring(0, 8))
+                    .sectionPath(row.getSectionPath())
+                    .content(row.getContent())
+                    .embeddedText(embedded)
+                    .contentHash(hash)
+                    .tokenCount(tokens)
+                    .truncated(tokens > props.getMaxTokens() * 1.2)
+                    .build());
+        }
+        chunkPipeline.relink(chunks);
+        ChunkIndex.IndexResult result;
+        try {
+            result = chunkIndex.reindex(docId, chunks);
+        } catch (Exception e) {
+            log.warn("分块编辑后向量重建失败，表数据仍照常保存 docId={} reason={}",
+                    docId, e.getMessage());
+            result = new ChunkIndex.IndexResult(List.of(), 0);
+        }
+
+        List<String> ids = result.getVectorIds();
+        for (int i = 0; i < rows.size(); i++) {
+            Chunk c = chunks.get(i);
+            DocumentChunk row = rows.get(i);
+            row.setChunkIndex(i);
+            row.setContentHash(c.getContentHash());
+            row.setSectionPath(c.getSectionPath());
+            row.setTokenCount(c.getTokenCount());
+            row.setParentId(c.getParentKey());
+            row.setChunkVersion(props.getActiveVersion());
+            row.setActive(Boolean.TRUE);
+            row.setVectorDimension(Math.max(result.getDimension(), 1));
+            row.setVectorId(i < ids.size() ? ids.get(i) : null);
+            row.setMetadata(chunkIndexingService.metadataJson(c));
+        }
+        chunkRepository.saveAll(rows);
+    }
+
+    private DocumentChunkDTO toDTO(DocumentChunk chunk, String documentTitle) {
+        Boolean truncated = false;
+        if (chunk.getTokenCount() != null) {
+            truncated = chunk.getTokenCount() > props.getMaxTokens() * 1.2;
+        }
+        return DocumentChunkDTO.builder()
+                .id(chunk.getId())
+                .documentId(chunk.getDocument().getId())
+                .documentTitle(documentTitle)
+                .content(chunk.getContent())
+                .chunkIndex(chunk.getChunkIndex())
+                .metadata(chunk.getMetadata())
+                .sectionPath(chunk.getSectionPath())
+                .contentHash(chunk.getContentHash())
+                .tokenCount(chunk.getTokenCount())
+                .chunkVersion(chunk.getChunkVersion())
+                .parentId(chunk.getParentId())
+                .truncated(truncated)
+                .createdAt(chunk.getCreatedAt())
+                .build();
     }
 }

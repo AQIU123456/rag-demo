@@ -47,9 +47,10 @@ public class DocumentChunk {
     private Integer chunkIndex;
 
     /**
-     * 分块元数据（JSON 字符串，如标题层级、来源位置等）
+     * 分块元数据（结构化 JSON：chunk_key / section_path / content_hash / 版本 / ACL ...）
+     * 原先存的是 Metadata.toString()（非合法 JSON），历史数据由迁移脚本清洗
      */
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String metadata;
 
     /**
@@ -57,6 +58,46 @@ public class DocumentChunk {
      */
     @Column(nullable = false)
     private Integer vectorDimension;
+
+    // ===== 企业级索引可追溯字段（S1 新增，原字段与构造签名保持不变） =====
+
+    /** 向量库条目 id，建立 chunk_id ↔ vector_id 映射 */
+    @Column(length = 64)
+    private String vectorId;
+
+    /** 父块 chunk_key（父子索引：子块检索、父块生成） */
+    @Column(length = 64)
+    private String parentId;
+
+    /** 标题 / 条款路径，如 "第二章 报销 > 2.1 差旅" */
+    @Column(length = 512)
+    private String sectionPath;
+
+    /** sha256(送嵌文本)，用于幂等短路与重复块检测 */
+    @Column(length = 64)
+    private String contentHash;
+
+    /** 索引版本，灰度重建时切换 */
+    @Column(length = 32)
+    private String chunkVersion;
+
+    /** 送嵌文本的估算 token 数 */
+    private Integer tokenCount;
+
+    /** 逻辑有效标记 */
+    private Boolean active;
+
+    /** 预留：租户隔离 */
+    @Column(length = 64)
+    private String tenantId;
+
+    /** 预留：ACL 标签 */
+    @Column(length = 128)
+    private String aclTag;
+
+    /** 生成该块向量的嵌入模型名 */
+    @Column(length = 128)
+    private String embeddingModel;
 
     /**
      * 创建时间

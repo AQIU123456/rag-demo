@@ -23,9 +23,12 @@
 - 记录分块内容和索引位置
 
 #### (2) EmbeddingService 服务
-- `embedAndStore()`: 将文本分块并生成向量嵌入
-- `searchSimilar()`: 基于语义相似度搜索相关文本块
-- 使用 LangChain4j 的递归分块器（500 字符/块，重叠 50 字符）
+- `searchSimilar()`: 基于混合召回（向量 + BM25/RRF）搜索相关文本块，再走 Rerank 精排
+- `embedAndStore()`: 保留签名的兼容包装，仅供遗留调用；主链路不再经过
+- **已按企业级分块方案改造**（详见 `ENTERPRISE_CHUNKING_PLAN.md`）：切分与索引统一由
+  `ChunkPipeline` + `ChunkIndex` + `ChunkIndexingService` 承担，按 **token** 计量
+  （`chunk.max-tokens=300` / `overlap-tokens=40`，不再是 500/50 或 400/80 字符），
+  可配置结构感知、上下文前缀、父子索引、幂等重建与删除闭环
 
 #### (3) EmbeddingStoreConfig 配置
 - 当前使用 `InMemoryEmbeddingStore`（内存向量存储）

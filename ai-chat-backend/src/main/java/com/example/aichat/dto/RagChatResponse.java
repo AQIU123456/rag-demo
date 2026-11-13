@@ -63,5 +63,19 @@ public class RagChatResponse {
          * 来源文档标题
          */
         private String source;
+
+        // ===== 引用溯源扩展（纯增量字段，旧前端忽略即可） =====
+
+        /** 命中的分块业务键 doc_&lt;id&gt;_&lt;index&gt;_&lt;hash8&gt; */
+        private String chunkId;
+
+        /** 所属文档 ID */
+        private Long documentId;
+
+        /** 所属文档标题 */
+        private String documentTitle;
+
+        /** 标题 / 条款路径 */
+        private String sectionPath;
     }
 }

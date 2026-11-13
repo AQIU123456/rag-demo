@@ -43,9 +43,29 @@ public class DocumentChunkDTO {
     private Integer chunkIndex;
 
     /**
-     * 分块元数据（JSON 字符串）
+     * 分块元数据（结构化 JSON 字符串）
      */
     private String metadata;
+
+    // ===== 纯增量字段：前端不消费也无影响 =====
+
+    /** 标题 / 条款路径 */
+    private String sectionPath;
+
+    /** 送嵌文本 sha256 */
+    private String contentHash;
+
+    /** 估算 token 数 */
+    private Integer tokenCount;
+
+    /** 索引版本 */
+    private String chunkVersion;
+
+    /** 父块 chunk_key */
+    private String parentId;
+
+    /** 是否超长被标记截断 */
+    private Boolean truncated;
 
     /**
      * 创建时间
