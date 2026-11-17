@@ -37,7 +37,9 @@ public class StructureAwareSplitter implements DocumentSplitter {
 
     private static final Pattern TABLE_ROW = Pattern.compile("^\\s*\\|.*\\|\\s*$");
 
+    /** 段内兜底切分器（token 计量的递归切分器），结构切完后交给它控块长 */
     private final DocumentSplitter delegate;
+    /** 单段硬上限（字符）：极端长行在进 delegate 前先粗切，避免一次送入过大文本 */
     private final int hardMaxChars;
 
     public StructureAwareSplitter(DocumentSplitter delegate, int hardMaxChars) {
@@ -45,6 +47,12 @@ public class StructureAwareSplitter implements DocumentSplitter {
         this.hardMaxChars = hardMaxChars;
     }
 
+    /**
+     * 先按标题/条款把全文切成章节，再把每个章节交给 delegate 控块长。
+     *
+     * @param document 待切分文档（纯文本）
+     * @return 带 {@code section_path} 元数据的片段；切不出章节时回退为 delegate 结果
+     */
     @Override
     public List<TextSegment> split(Document document) {
         String text = document.text();
@@ -52,6 +60,8 @@ public class StructureAwareSplitter implements DocumentSplitter {
             return delegate.split(document);
         }
 
+        // 1. 扫描标题行，得到「章节区间 + 该区间所属标题」两个平行列表
+        //    last 是上一段起点；遇到新标题时把 [last, 标题起点) 作为上一章收口
         Matcher m = HEADING.matcher(text);
         List<int[]> ranges = new ArrayList<>();
         List<String> titles = new ArrayList<>();
@@ -70,11 +80,13 @@ public class StructureAwareSplitter implements DocumentSplitter {
         ranges.add(new int[]{last, text.length()});
         titles.add(pending);
 
+        // 2. 逐章处理：维护标题栈（出栈到同级），生成 section_path 后再切段
         List<TextSegment> result = new ArrayList<>();
         Deque<String> path = new ArrayDeque<>();
         for (int i = 0; i < ranges.size(); i++) {
             String title = titles.get(i);
             if (!title.isEmpty()) {
+                // 出栈到「比当前标题更浅」的位置，path 始终只保留祖先链
                 int level = headingLevel(title);
                 while (!path.isEmpty() && path.size() >= level) {
                     path.removeLast();
@@ -82,6 +94,7 @@ public class StructureAwareSplitter implements DocumentSplitter {
                 path.addLast(title);
             }
             String sectionPath = String.join(" > ", path);
+            // 与 document_chunks.section_path 列长对齐，防止超长目录撑爆元数据
             if (sectionPath.length() > 512) {
                 sectionPath = sectionPath.substring(0, 512);
             }
@@ -91,6 +104,7 @@ public class StructureAwareSplitter implements DocumentSplitter {
                 continue;
             }
             for (String slice : sectionSlices(body)) {
+                // 表格片已按整表/重复表头处理好，直接成块，不再进 delegate 被拆散
                 if (slice.startsWith("__TABLE__:")) {
                     Metadata md = new Metadata();
                     md.put("section_path", sectionPath);
@@ -99,6 +113,7 @@ public class StructureAwareSplitter implements DocumentSplitter {
                     continue;
                 }
                 for (TextSegment seg : delegate.split(Document.from(slice))) {
+                    // delegate 不知道章节信息，这里统一回填 section_path 供上下文前缀与引用溯源
                     Metadata md = seg.metadata().copy();
                     md.put("section_path", sectionPath);
                     result.add(TextSegment.from(seg.text(), md));
@@ -162,6 +177,7 @@ public class StructureAwareSplitter implements DocumentSplitter {
         }
     }
 
+    /** 字符级等长硬切：只做进 delegate 前的粗保护，精确控长交给 token 递归切分器 */
     private List<String> hardSlice(String text) {
         if (text.length() <= hardMaxChars) {
             return List.of(text);
@@ -173,6 +189,10 @@ public class StructureAwareSplitter implements DocumentSplitter {
         return slices;
     }
 
+    /**
+     * 推算标题层级，仅用于标题栈出栈判断：
+     * Markdown 标题取 # 个数（最多 6）；「第X章/节/条」固定记 2 级；编号式标题按点号数 + 1。
+     */
     private int headingLevel(String t) {
         if (t.startsWith("#")) {
             int n = 0;

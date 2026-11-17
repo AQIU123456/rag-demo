@@ -38,11 +38,16 @@ public class ChunkIndexingService {
 
     private final KnowledgeDocumentRepository documentRepository;
     private final DocumentChunkRepository chunkRepository;
+    /** 切分（唯一入口） */
     private final ChunkPipeline chunkPipeline;
+    /** 向量索引（唯一写入口） */
     private final ChunkIndex chunkIndex;
+    /** 索引版本、租户等参数，写入分块行用于回溯 */
     private final ChunkProperties props;
+    /** 序列化 metadata JSON */
     private final ObjectMapper objectMapper;
 
+    /** 嵌入模型名，落库用于「模型换代后哪些块需要重嵌」的排查 */
     @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}")
     private String embeddingModelName;
 
@@ -60,11 +65,15 @@ public class ChunkIndexingService {
         this.objectMapper = objectMapper;
     }
 
-    /** 事务提交后异步（同一线程 afterCommit）重建索引；无事务时立即执行 */
+    /**
+     * 事务提交后重建索引（用默认策略），无事务时立即执行。
+     * 放 afterCommit 是为了：事务回滚时不留下无用向量；索引失败也不会把事务标记为 rollback-only。
+     */
     public void indexAfterCommit(Long docId) {
         indexAfterCommit(docId, ChunkPolicy.defaults());
     }
 
+    /** 同 {@link #indexAfterCommit(Long)}，可指定本次策略（如前端选择的 PARENT_CHILD） */
     public void indexAfterCommit(Long docId, ChunkPolicy policy) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
@@ -79,6 +88,7 @@ public class ChunkIndexingService {
         }
     }
 
+    /** 吞异常的包装：afterCommit 阶段抛异常已无人接管，只能降级记录 */
     private void safeIndex(Long docId, ChunkPolicy policy) {
         try {
             indexNow(docId, policy);
@@ -88,14 +98,29 @@ public class ChunkIndexingService {
         }
     }
 
-    /** 同步重建，供「重新生成分块」这类需要立即返回结果的入口使用 */
+    /**
+     * 同步重建（按 id），供「重新生成分块」这类需要立即返回结果的入口使用。
+     *
+     * @return 重建后的分块数
+     */
     public int indexNow(Long docId, ChunkPolicy policy) {
         KnowledgeDocument doc = documentRepository.findById(docId)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在，ID: " + docId));
         return indexNow(doc, policy);
     }
 
+    /**
+     * 同步重建主流程：切分 → 写向量 → 落分块表。
+     *
+     * <p>表与向量分两步写，天然存在不一致窗口：向量失败时表照常落库（文档可读、可编辑），
+     * 向量由下次启动重建补齐；表写入本身失败则抛异常，由调用方决定是否回滚。</p>
+     *
+     * @param doc    文档实体（content 为切分事实源）
+     * @param policy 策略覆盖，null 表示用全局配置
+     * @return 分块数
+     */
     public int indexNow(KnowledgeDocument doc, ChunkPolicy policy) {
+        // 1. 切分
         List<Chunk> chunks = chunkPipeline.split(doc, policy);
         // 降级：嵌入 API 不可用时仍保证分块表与文档一致，向量由下次启动重建补齐
         ChunkIndex.IndexResult result;
@@ -107,6 +132,7 @@ public class ChunkIndexingService {
             result = new ChunkIndex.IndexResult(List.of(), 0);
         }
 
+        // 2. 与库内旧行比对：hash 序列与版本都一致时只刷新 vector_id，不重写表
         List<DocumentChunk> old = chunkRepository.findByDocumentIdOrderByChunkIndex(doc.getId());
         boolean same = isSameVersionAndContent(old, chunks);
         if (same) {
@@ -120,9 +146,11 @@ public class ChunkIndexingService {
             return chunks.size();
         }
 
+        // 3. 内容或版本变化：整批替换。先删再 flush，避免同 doc 下新旧行唯一键冲突
         chunkRepository.deleteByDocumentId(doc.getId());
         chunkRepository.flush();
 
+        // 4. 按 chunks 顺序生成表行；vector_ids 与 chunks 同序，下标即对应关系
         List<String> ids = result.getVectorIds();
         List<DocumentChunk> rows = new ArrayList<>(chunks.size());
         for (int i = 0; i < chunks.size(); i++) {
@@ -149,6 +177,10 @@ public class ChunkIndexingService {
         return rows.size();
     }
 
+    /**
+     * 判断能否幂等短路：块数相同、送嵌文本 hash 序列逐位相同、且版本未变。
+     * 三者都满足说明切分结果与索引口径完全没变，无需删表重建（保住主键，前端编辑引用不失效）。
+     */
     private boolean isSameVersionAndContent(List<DocumentChunk> old, List<Chunk> chunks) {
         if (old.size() != chunks.size() || old.isEmpty()) {
             return false;
@@ -187,11 +219,12 @@ public class ChunkIndexingService {
         }
     }
 
-    /** 删除闭环：表记录 + 向量墓碑（调用方负责在事务提交后触发） */
+    /** 删除闭环：把该文档的全部向量 id 置墓碑（0.29.1 无物理删除能力），检索侧立即不可见 */
     public void removeByDocId(Long docId) {
         chunkIndex.removeByDocId(docId);
     }
 
+    /** 事务提交后再删向量：放在提交前删，事务回滚会导致索引与库不一致 */
     public void removeByDocIdAfterCommit(Long docId) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(

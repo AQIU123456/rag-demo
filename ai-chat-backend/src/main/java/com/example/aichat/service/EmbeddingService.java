@@ -25,10 +25,15 @@ public class EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingService.class);
 
+    /** 查询向量化（写入路径的嵌入由 ChunkIndex 统一负责） */
     private final EmbeddingModel embeddingModel;
+    /** 远端/本地交叉编码器精排，失败自动降级 */
     private final RerankService rerankService;
+    /** 唯一检索入口 */
     private final ChunkIndex chunkIndex;
+    /** 仅兼容包装 embedAndStore 使用 */
     private final ChunkIndexingService chunkIndexingService;
+    /** 仅兼容包装 embedAndStore 使用 */
     private final KnowledgeDocumentRepository documentRepository;
 
     public EmbeddingService(EmbeddingModel embeddingModel,
@@ -72,6 +77,7 @@ public class EmbeddingService {
         }
     }
 
+    /** 从 {@code doc_<id>} 形式的来源标签解析文档 ID，格式不符返回 null */
     private Long parseDocId(String source) {
         if (source == null || !source.startsWith("doc_")) {
             return null;
@@ -84,9 +90,15 @@ public class EmbeddingService {
     }
 
     /**
-     * 基于语义（+ 可选 BM25 混合）搜索相似文本块，并执行两段式精排。
+     * 两段式检索：ChunkIndex 内做「向量 + BM25 → RRF → 过滤 → 多样性裁剪 → 上下文扩展」，
+     * 这里再按需叠加交叉编码器精排，最终返回 maxResults 条。
+     *
+     * @param query      用户问题（调用方已消毒）
+     * @param maxResults 期望返回条数
+     * @return 按最终相关性降序的检索结果，含引用溯源字段
      */
     public List<SearchResult> searchSimilar(String query, int maxResults) {
+        // 1. 启用精排时放大召回量，给精排留出可筛选的候选池
         boolean rerankEnabled = rerankService.isEnabled();
         int recallSize = maxResults;
         if (rerankEnabled) {
@@ -94,6 +106,7 @@ public class EmbeddingService {
             recallSize = Math.max(maxResults, maxResults * multiplier);
         }
 
+        // 2. 查询向量化 -> 混合召回（BM25 与 RRF 融合在 ChunkIndex 内部完成）
         Embedding queryEmbedding = embeddingModel.embed(query).content();
         List<ChunkHit> hits = chunkIndex.search(query, queryEmbedding, recallSize);
 
@@ -102,12 +115,17 @@ public class EmbeddingService {
             results.add(toSearchResult(hit));
         }
 
+        // 3. 精排（失败会内部降级为向量序），并截断到 maxResults
         if (rerankEnabled && results.size() > 1) {
             results = applyRerank(query, results, maxResults);
         }
         return results;
     }
 
+    /**
+     * 命中结果 -> 检索 DTO。source 与 doc_id 都保留：前者供 hybridSearch 归并、后者供引用跳转，
+     * 元数据异常时只丢溯源字段，不影响正文返回。
+     */
     private SearchResult toSearchResult(ChunkHit hit) {
         String source = hit.getMetadata().getString("source");
         Long docId = null;
@@ -131,6 +149,7 @@ public class EmbeddingService {
                 hit.getContextText());
     }
 
+    /** 精排候选倍数，读取异常时退化为 3 倍，保证检索不因配置问题中断 */
     private int getRerankCandidateMultiplier() {
         try {
             return rerankService.getCandidateMultiplier();
@@ -171,9 +190,13 @@ public class EmbeddingService {
      * 搜索结果 DTO。原三参 / 四参构造器保持不变，新增溯源字段走全参构造器。
      */
     public static class SearchResult {
+        /** 命中块原文，用于引用展示 */
         private final String content;
+        /** 最终相关性分：启用精排时为精排分，否则为融合分 */
         private final double score;
+        /** 来源标签 doc_&lt;id&gt;，hybridSearch 依赖该格式归并 */
         private final String source;
+        /** 向量相似度（未融合、未精排），用于调试与本地重排兜底 */
         private final double vectorScore;
         private final String chunkId;
         private final Long documentId;

@@ -38,10 +38,15 @@ public class ChunkIndex {
 
     private static final Logger log = LoggerFactory.getLogger(ChunkIndex.class);
 
+    /** 底层向量库（当前为 InMemory，切 Milvus/Qdrant 时只换这一层） */
     private final EmbeddingStore<TextSegment> store;
+    /** 用于把送嵌文本转成向量 */
     private final EmbeddingModel embeddingModel;
+    /** 召回倍数、版本、租户/ACL、RRF 参数等 */
     private final ChunkProperties props;
+    /** 关键词通道打分器（BM25） */
     private final Bm25Scorer bm25Scorer;
+    /** 上下文扩展时按 token 预算截断用 */
     private final Tokenizer tokenizer;
 
     /** docId -> 当前生效的向量 id 列表 */
@@ -74,15 +79,18 @@ public class ChunkIndex {
             removeByDocId(docId);
             return new IndexResult(List.of(), 0);
         }
+        // 1. 先构造送嵌文本与元数据（元数据全部落进向量库，检索期用于过滤与溯源）
         List<TextSegment> segments = new ArrayList<>(chunks.size());
         for (Chunk c : chunks) {
             segments.add(TextSegment.from(c.getEmbeddedText(), metadataOf(docId, c)));
         }
+        // 2. 批量嵌入（外部调用容易失败，放在改内部状态之前，失败则旧索引原样保留）
         List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
         if (embeddings == null || embeddings.size() != segments.size()) {
             throw new IllegalStateException("嵌入结果数量与分块数量不一致，docId=" + docId);
         }
 
+        // 3. 旧向量先置墓碑，再把新向量写库并登记到 liveIndex 白名单
         removeByDocId(docId);
         List<String> ids = new ArrayList<>(embeddings.size());
         for (int i = 0; i < embeddings.size(); i++) {
@@ -96,6 +104,10 @@ public class ChunkIndex {
         return new IndexResult(ids, embeddings.get(0).dimension());
     }
 
+    /**
+     * 组装向量条目元数据。这里的键是检索期过滤与引用溯源的唯一依据，改键名要同步改
+     * {@link #visible}、{@link #diversify}、{@link EmbeddingService#toSearchResult}。
+     */
     private Metadata metadataOf(Long docId, Chunk c) {
         Metadata md = new Metadata();
         // source 是既有 hybridSearch / RagService 依赖的键，必须保留 doc_<id> 格式
@@ -117,6 +129,7 @@ public class ChunkIndex {
         return md;
     }
 
+    /** 元数据值统一转字符串，避免空值 NullPointerException */
     private static String safe(String s) {
         return s == null ? "" : s;
     }
@@ -134,14 +147,17 @@ public class ChunkIndex {
         }
     }
 
+    /** 当前已写入的向量 id（未做墓碑过滤，仅供落表回填与调试） */
     public List<String> vectorIdsOf(Long docId) {
         return docVectors.getOrDefault(docId, List.of());
     }
 
+    /** 活跃向量数（可检索条目），用于冒烟断言「重复上传不增长」 */
     public int liveVectorCount() {
         return liveIndex.size();
     }
 
+    /** 墓碑数，用于观测「只增不减」的泄漏趋势 */
     public long tombstoneCount() {
         return tombstones.size();
     }
@@ -159,10 +175,13 @@ public class ChunkIndex {
         if (k <= 0 || queryEmbedding == null) {
             return List.of();
         }
+        // 多召回一些：墓碑与版本/ACL 过滤会吃掉部分候选，按 k 直接召回容易不足额
         int recall = Math.max(k * props.getRecallMultiplier(), k + 20);
         List<EmbeddingMatch<TextSegment>> vectorMatches =
                 store.findRelevant(queryEmbedding, recall, props.getMinScore());
 
+        // 第一通道：向量粗排。三条过滤缺一不可——
+        // 不在 liveIndex（绕过流水线写入的旧向量）、已置墓碑、版本/租户/ACL 不可见
         Map<String, Integer> vectorRank = new LinkedHashMap<>();
         Map<String, IndexedChunk> candidates = new LinkedHashMap<>();
         int rank = 1;
@@ -176,6 +195,7 @@ public class ChunkIndex {
             vectorRank.put(ic.vectorId, rank++);
         }
 
+        // 第二通道：BM25 关键词召回，专治专有名词 / 编号 / 缩写这类向量不敏感的查询
         Map<String, Integer> keywordRank = new LinkedHashMap<>();
         Map<String, Double> bm25Scores = new HashMap<>();
         if (props.isBm25Enabled() && queryText != null && !queryText.isBlank()) {
@@ -198,6 +218,8 @@ public class ChunkIndex {
             }
         }
 
+        // 双通道融合：启用 BM25 时用 RRF（只依赖名次，天然免去两路分数量纲对齐问题）；
+        // 未启用时保持原纯向量分，保证关掉开关就等价于改造前的检索行为
         List<ChunkHit> fused = new ArrayList<>();
         for (IndexedChunk ic : candidates.values()) {
             int vr = vectorRank.getOrDefault(ic.vectorId, 0);
@@ -219,6 +241,7 @@ public class ChunkIndex {
         }
         fused.sort(Comparator.comparingDouble(ChunkHit::getFusedScore).reversed());
 
+        // 排序后做多样性裁剪，再按最终命中集合回填上下文（父块 / 相邻块扩展只对入选块执行，省 embed 预算）
         List<ChunkHit> diversified = diversify(fused, k);
         for (ChunkHit hit : diversified) {
             IndexedChunk ic = liveIndex.get(hit.getVectorId());
@@ -233,6 +256,11 @@ public class ChunkIndex {
         return diversified;
     }
 
+    /**
+     * Reciprocal Rank Fusion：score = Σ 1/(k + rank)。
+     * 只吃名次不吃原始分，避免向量相似度（0~1）与 BM25 分（0~几十）量纲不可比的问题。
+     * 某一路未召回时该项为 0，等价于单通道得分。
+     */
     private double rrf(int vectorRank, int keywordRank) {
         double k = props.getRrfK();
         double score = 0d;
@@ -245,6 +273,10 @@ public class ChunkIndex {
         return score;
     }
 
+    /**
+     * 检索期可见性判定：版本必须匹配 activeVersion（灰度重建时旧版本自动失效）、
+     * active 必须为 true；开启租户过滤后再叠加 tenant / ACL 校验。
+     */
     private boolean visible(IndexedChunk ic) {
         Metadata md = ic.segment.metadata();
         if (!props.getActiveVersion().equals(md.getString("chunk_version"))) {
@@ -315,6 +347,7 @@ public class ChunkIndex {
         if (group.size() <= 1) {
             return ic.segment.text();
         }
+        // 以命中块自身文本为起点，按预算逐块追加，累计超 parentMaxTokens 即停，防止撑爆 prompt
         StringBuilder sb = new StringBuilder(ic.segment.text());
         int budget = props.getParentMaxTokens();
         for (Chunk c : group) {
@@ -333,7 +366,9 @@ public class ChunkIndex {
 
     /** 重建结果，供落表时回填 vector_id 与向量维度 */
     public static class IndexResult {
+        /** 与 chunks 顺序一一对应的向量 id；嵌入失败时为空列表 */
         private final List<String> vectorIds;
+        /** 向量维度，落 document_chunks.vector_dimension */
         private final int dimension;
 
         public IndexResult(List<String> vectorIds, int dimension) {
@@ -350,10 +385,18 @@ public class ChunkIndex {
         }
     }
 
+    /**
+     * 索引内条目：向量库只返回 embeddingId + 相似度，靠本结构反查
+     * Chunk（原文/父子键）与 TextSegment（元数据/送嵌文本）。
+     */
     private static class IndexedChunk {
+        /** 向量库返回的条目 id */
         private final String vectorId;
+        /** 对应的分块（提供 content / parentKey / index） */
         private final Chunk chunk;
+        /** 写入向量库的片段（提供 metadata 与送嵌前的文本） */
         private final TextSegment segment;
+        /** 本次查询的向量相似度，粗排阶段回填 */
         private double vectorScore;
 
         private IndexedChunk(String vectorId, Chunk chunk, TextSegment segment) {

@@ -37,10 +37,15 @@ public class DocumentChunkService {
 
     private final DocumentChunkRepository chunkRepository;
     private final KnowledgeDocumentRepository documentRepository;
+    /** 全量重切分（重新生成分块）走这里 */
     private final ChunkIndexingService chunkIndexingService;
+    /** 表内行重建时用它还原送嵌文本与前缀口径 */
     private final ChunkPipeline chunkPipeline;
+    /** 表内行重建时直接写向量索引 */
     private final ChunkIndex chunkIndex;
+    /** 版本与块长阈值，用于落表字段与 truncated 判定 */
     private final ChunkProperties props;
+    /** 估算 token 数 */
     private final Tokenizer tokenizer;
 
     public DocumentChunkService(DocumentChunkRepository chunkRepository,
@@ -154,9 +159,11 @@ public class DocumentChunkService {
         String title = PromptInjectionGuard.sanitizeLabel(
                 doc.getTitle() == null ? "未命名文档" : doc.getTitle());
 
+        // 1. 以表内行为准重建 Chunk（不重切全文，保留用户手工修改）
         List<Chunk> chunks = new ArrayList<>(rows.size());
         for (int i = 0; i < rows.size(); i++) {
             DocumentChunk row = rows.get(i);
+            // 用与流水线完全相同的口径生成送嵌文本与 hash，否则同一内容会算出不同向量
             String embedded = chunkPipeline.embedText(title, row.getSectionPath(), row.getContent());
             String hash = ChunkPipeline.sha256(embedded);
             int tokens = tokenizer.estimateTokenCountInText(embedded);
@@ -173,6 +180,7 @@ public class DocumentChunkService {
                     .truncated(tokens > props.getMaxTokens() * 1.2)
                     .build());
         }
+        // 2. 重排相邻/父子键后整批替换该文档的向量（旧向量置墓碑，不残留）
         chunkPipeline.relink(chunks);
         ChunkIndex.IndexResult result;
         try {
@@ -183,6 +191,7 @@ public class DocumentChunkService {
             result = new ChunkIndex.IndexResult(List.of(), 0);
         }
 
+        // 3. 回填表内行：索引用到的 hash / 版本 / 元数据必须与向量保持一致
         List<String> ids = result.getVectorIds();
         for (int i = 0; i < rows.size(); i++) {
             Chunk c = chunks.get(i);
@@ -201,6 +210,7 @@ public class DocumentChunkService {
         chunkRepository.saveAll(rows);
     }
 
+    /** 实体 -> DTO；truncated 按当前配置阈值现算，避免历史行带着过期标记 */
     private DocumentChunkDTO toDTO(DocumentChunk chunk, String documentTitle) {
         Boolean truncated = false;
         if (chunk.getTokenCount() != null) {

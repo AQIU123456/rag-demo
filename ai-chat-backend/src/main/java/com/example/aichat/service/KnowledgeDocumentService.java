@@ -26,8 +26,10 @@ import java.util.stream.Collectors;
 public class KnowledgeDocumentService {
     
     private final KnowledgeDocumentRepository documentRepository;
+    /** 检索/兼容包装用；本类的写路径已不直接调它 */
     private final EmbeddingService embeddingService;
     private final DocumentChunkRepository chunkRepository;
+    /** 唯一索引编排器；三参构造场景下为 null，写路径自动降级为「只存文档、不建索引」 */
     private final ChunkIndexingService chunkIndexingService;
 
     /**
@@ -51,18 +53,21 @@ public class KnowledgeDocumentService {
         this.chunkIndexingService = chunkIndexingService;
     }
 
+    /** 事务提交后重建该文档的索引；编排器缺失（三参构造）时静默跳过 */
     private void scheduleIndex(Long docId) {
         if (chunkIndexingService != null && docId != null) {
             chunkIndexingService.indexAfterCommit(docId);
         }
     }
 
+    /** 事务提交后删除该文档的向量；同上，编排器缺失时静默跳过 */
     private void scheduleRemove(Long docId) {
         if (chunkIndexingService != null && docId != null) {
             chunkIndexingService.removeByDocIdAfterCommit(docId);
         }
     }
 
+    /** 同步重建（启动重建用），policy 传 null 表示完全按全局配置切分 */
     private int rebuildNow(KnowledgeDocument doc) {
         return chunkIndexingService == null ? 0 : chunkIndexingService.indexNow(doc, null);
     }

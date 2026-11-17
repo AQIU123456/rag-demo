@@ -54,7 +54,8 @@ public class DocumentChunk {
     private String metadata;
 
     /**
-     * 向量嵌入维度
+     * 向量嵌入维度。
+     * 嵌入调用失败时落占位值 1（见 ChunkIndexingService），避免非空约束报错，重启重建时会覆盖为真实维度
      */
     @Column(nullable = false)
     private Integer vectorDimension;

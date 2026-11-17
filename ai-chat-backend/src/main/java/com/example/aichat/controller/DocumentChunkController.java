@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 @CrossOrigin(origins = "*")
 public class DocumentChunkController {
 
+    /** 分块业务层；所有写操作最终都收敛到 ChunkPipeline/ChunkIndex 的唯一入口 */
     private final DocumentChunkService chunkService;
 
     public DocumentChunkController(DocumentChunkService chunkService) {

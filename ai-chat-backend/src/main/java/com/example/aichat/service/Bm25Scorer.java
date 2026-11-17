@@ -20,9 +20,12 @@ import java.util.Map;
 @Component
 public class Bm25Scorer {
 
+    /** 词频饱和系数：越大越不容易被高频词拉高分数 */
     private static final double K1 = 1.5;
+    /** 文档长度归一化强度：0 表示完全忽略长度，1 表示完全归一 */
     private static final double B = 0.75;
 
+    /** 参与打分的语料单元：id 用向量 id，便于和向量通道按同一下标融合 */
     public static class Doc {
         private final String id;
         private final String text;
@@ -54,6 +57,7 @@ public class Bm25Scorer {
             return scores;
         }
 
+        // 第一遍：统计每篇的「查询词词频」与全局「包含该词的文档数」，同时累计总长度算 avgdl
         Map<String, List<Integer>> termFreq = new HashMap<>();
         Map<String, Integer> docFreq = new HashMap<>();
         List<Integer> lengths = new ArrayList<>(docs.size());
@@ -77,6 +81,7 @@ public class Bm25Scorer {
             }
         }
 
+        // IDF：词越稀有分越高；用 log(1 + ...) 保证 df 接近 N 时仍为正数
         int n = docs.size();
         double avgdl = totalLength == 0 ? 1.0 : (double) totalLength / n;
         double[] idf = new double[queryTerms.size()];
@@ -85,6 +90,7 @@ public class Bm25Scorer {
             idf[i] = Math.log(1.0 + (n - df + 0.5) / (df + 0.5));
         }
 
+        // 第二遍：按标准 BM25 公式累加各查询词得分
         int row = 0;
         for (Doc doc : docs) {
             List<Integer> freqs = termFreq.get(doc.getId());
@@ -148,6 +154,7 @@ public class Bm25Scorer {
         return tokens;
     }
 
+    /** 把一段连续中文切成「单字 + 相邻双字」：单字保召回，双字保短语精确性（无需分词器） */
     private void flushCjk(StringBuilder cjk, List<String> tokens) {
         if (cjk.length() == 0) {
             return;

@@ -17,6 +17,10 @@ import org.springframework.stereotype.Component;
 @Primary
 public class HeuristicTokenizer implements Tokenizer {
 
+    /**
+     * 估算送嵌文本的 token 数：ASCII 记 0.25、其余（含中文）记 1，最后向上取整。
+     * 与 OpenAI 真实 BPE 有偏差，但方向保守（宁可多算），可保证切分不越过模型上限。
+     */
     @Override
     public int estimateTokenCountInText(String text) {
         if (text == null || text.isEmpty()) {
@@ -29,11 +33,13 @@ public class HeuristicTokenizer implements Tokenizer {
         return (int) Math.ceil(tokens);
     }
 
+    /** 消息级估算：项目内未做精确计数，退化为整条消息文本估算 */
     @Override
     public int estimateTokenCountInMessage(ChatMessage message) {
         return message == null ? 0 : estimateTokenCountInText(String.valueOf(message));
     }
 
+    /** 多条消息累计 */
     @Override
     public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) {
         if (messages == null) {
@@ -46,6 +52,7 @@ public class HeuristicTokenizer implements Tokenizer {
         return total;
     }
 
+    /** 工具定义估算（仅满足接口契约，切分链路不使用） */
     @Override
     public int estimateTokenCountInToolSpecifications(Iterable<ToolSpecification> specs) {
         if (specs == null) {
@@ -58,6 +65,7 @@ public class HeuristicTokenizer implements Tokenizer {
         return total;
     }
 
+    /** 工具调用请求估算（仅满足接口契约，切分链路不使用） */
     @Override
     public int estimateTokenCountInToolExecutionRequests(Iterable<ToolExecutionRequest> requests) {
         if (requests == null) {

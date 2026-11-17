@@ -19,7 +19,9 @@ import java.util.stream.Collectors;
 @Service
 public class RagService {
 
+    /** 生成模型（只负责按上下文作答，检索与切分在别处） */
     private final ChatLanguageModel chatLanguageModel;
+    /** 检索门面：内部已完成混合召回、过滤与精排 */
     private final EmbeddingService embeddingService;
 
     public RagService(ChatLanguageModel chatLanguageModel, 
@@ -56,7 +58,8 @@ public class RagService {
     }
 
     /**
-     * 构建上下文内容
+     * 拼装送 LLM 的上下文。注意这里用的是 contextText 而非 content：
+     * 检索单元是子块（精准命中），生成单元是父块/邻域（语义完整）。
      */
     private String buildContext(List<EmbeddingService.SearchResult> searchResults) {
         if (searchResults.isEmpty()) {
@@ -141,9 +144,13 @@ public class RagService {
      * RAG 问答响应
      */
     public static class RagResponse {
+        /** LLM 生成的答案 */
         private final String answer;
+        /** 实际送 LLM 的上下文（便于前端调试与评估对齐） */
         private final String context;
+        /** 原始检索结果，含向量分/融合分/溯源字段 */
         private final List<EmbeddingService.SearchResult> searchResults;
+        /** 引用列表（已消毒，可直接展示） */
         private final List<Citation> citations;
 
         public RagResponse(String answer, String context, 
@@ -176,8 +183,11 @@ public class RagService {
      * 引用来源信息
      */
     public static class Citation {
+        /** 命中块原文（展示用；与送 LLM 的上下文不同） */
         private final String content;
+        /** 最终相关性分 */
         private final double score;
+        /** 来源标签 doc_&lt;id&gt; */
         private final String source;
         // 引用溯源（纯增量）
         private final String chunkId;

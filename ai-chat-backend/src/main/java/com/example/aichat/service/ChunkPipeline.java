@@ -29,7 +29,10 @@ public class ChunkPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(ChunkPipeline.class);
 
+    /** 全局分块参数（块长、重叠、各阶段开关、索引版本），改配置即可 A/B 或回滚 */
     private final ChunkProperties props;
+
+    /** 统一 token 计量器：块长判断、预算兜底、truncated 标记都以它为准 */
     private final Tokenizer tokenizer;
 
     public ChunkPipeline(ChunkProperties props, Tokenizer tokenizer) {
@@ -37,11 +40,23 @@ public class ChunkPipeline {
         this.tokenizer = tokenizer;
     }
 
+    /** 用全局配置切分：上传、文档编辑、启动重建等常规路径走这里 */
     public List<Chunk> split(KnowledgeDocument doc) {
         return split(doc, ChunkPolicy.defaults());
     }
 
+    /**
+     * 按「本次策略覆盖 + 全局配置」执行完整切分。
+     *
+     * <p>policy 中为 null 的字段一律回落到 {@link ChunkProperties}，
+     * 因此前端三种策略只需覆盖差异项，不会污染全局默认行为。</p>
+     *
+     * @param doc    待切分文档（content 为唯一事实源，title 参与上下文前缀）
+     * @param policy 本次策略覆盖，可为 null
+     * @return 有序的分块列表，已带 prev/next、父子键、hash 与 token 数
+     */
     public List<Chunk> split(KnowledgeDocument doc, ChunkPolicy policy) {
+        // 1. 解析本次生效参数：策略覆盖优先，未指定则取全局配置
         ChunkPolicy p = policy == null ? ChunkPolicy.defaults() : policy;
         int maxTokens = p.getMaxTokens() != null ? p.getMaxTokens() : props.getMaxTokens();
         int overlap = p.getOverlapTokens() != null ? p.getOverlapTokens() : props.getOverlapTokens();
@@ -52,19 +67,26 @@ public class ChunkPipeline {
         boolean parentChild = p.getParentChild() != null
                 ? p.getParentChild() : props.isParentChild();
 
+        // 2. 组装切分器：按 token 计量的递归切分器做底座，结构感知器在其上按标题/条款先分段
         DocumentSplitter base = DocumentSplitters.recursive(maxTokens, overlap, tokenizer);
         DocumentSplitter splitter = structureAware
                 ? new StructureAwareSplitter(base, props.getHardMaxChars())
                 : base;
 
+        // 3. 切分后过 token 预算硬兜底：0.29.1 的中文句子切分不可靠，必须二次限长
         String raw = doc.getContent() == null ? "" : doc.getContent();
         List<TextSegment> segments = raw.isBlank()
                 ? List.of()
                 : enforceTokenBudget(splitter.split(Document.from(raw)), maxTokens);
 
+        // 标题来自用户输入，先做标签消毒，避免上下文前缀被注入结构标记
         String safeTitle = PromptInjectionGuard.sanitizeLabel(
                 doc.getTitle() == null ? "未命名文档" : doc.getTitle());
 
+        // 4. 逐个 segment 组装 Chunk：
+        //    content = 原文（落 document_chunks.content，供展示与编辑）
+        //    embeddedText = 带上下文前缀的送嵌文本（只进向量库，不落正文列）
+        //    contentHash = sha256(embeddedText)，作为幂等短路与重复块检测的键
         List<Chunk> chunks = new ArrayList<>(segments.size());
         for (int i = 0; i < segments.size(); i++) {
             TextSegment seg = segments.get(i);
@@ -87,10 +109,12 @@ public class ChunkPipeline {
                     .build());
         }
 
+        // 5. 建立块间关系：相邻键用于上下文窗口扩展，父子键用于「子块检索、父块生成」
         linkNeighbors(chunks);
         if (parentChild) {
             linkParents(chunks, props.getParentMaxTokens());
         }
+        // 6. 输出块质量指标（块长分布 / 截断率 / 重复率），供参数调优与线上观测
         if (props.isObservability()) {
             logQuality(doc.getId(), chunks, maxTokens);
         }
@@ -118,6 +142,7 @@ public class ChunkPipeline {
             while (start < text.length()) {
                 int end = start;
                 double acc = 0d;
+                // 按字符成本累加到预算上限：ASCII 0.25 token、其余 1 token，与 HeuristicTokenizer 口径一致
                 while (end < text.length()) {
                     double cost = text.charAt(end) < 0x80 ? 0.25d : 1.0d;
                     if (acc + cost > maxTokens) {
@@ -127,8 +152,10 @@ public class ChunkPipeline {
                     end++;
                 }
                 if (end == start) {
+                    // 单字符就超预算时的保底，避免死循环
                     end = start + 1;
                 }
+                // 复用原 metadata（含 section_path），否则二次切分后章节路径会丢失
                 result.add(TextSegment.from(text.substring(start, end), seg.metadata().copy()));
                 start = end;
             }
@@ -157,7 +184,10 @@ public class ChunkPipeline {
         return "[" + safeTitle + safePath + "]\n" + content;
     }
 
-    /** 重建相邻/父子关系（供表内行重建后调用） */
+    /**
+     * 重建相邻 / 父子关系。供 document_chunks 表内行重建（分块编辑、删除、排序）后调用：
+     * 这些路径不重新切分全文，但 prev/next/parentKey 必须与新顺序保持一致。
+     */
     public void relink(List<Chunk> chunks) {
         linkNeighbors(chunks);
         if (props.isParentChild()) {
@@ -165,6 +195,7 @@ public class ChunkPipeline {
         }
     }
 
+    /** 线性串联相邻块：首块 prevKey=null、末块 nextKey=null */
     private void linkNeighbors(List<Chunk> chunks) {
         for (int i = 0; i < chunks.size(); i++) {
             chunks.get(i).setPrevKey(i > 0 ? chunks.get(i - 1).getChunkKey() : null);
@@ -190,6 +221,7 @@ public class ChunkPipeline {
         }
     }
 
+    /** 把同一父块组内的子块统一指向组内首块的 chunkKey（parentKey 即父块的稳定引用） */
     private void assignParent(List<Chunk> chunks, int from, int to) {
         String parentKey = chunks.get(from).getChunkKey();
         for (int i = from; i <= to; i++) {
@@ -197,6 +229,11 @@ public class ChunkPipeline {
         }
     }
 
+    /**
+     * 输出块质量指标。三个指标分别对应三类典型故障：
+     * truncatedRate（块被模型静默截断）、duplicateRate（overlap 或切分器重复产出）、
+     * maxTokensObserved（超出配置的异常块）。
+     */
     private void logQuality(Long docId, List<Chunk> chunks, int maxTokens) {
         if (chunks.isEmpty()) {
             log.info("CHUNK-METRIC docId={} chunks=0", docId);
@@ -213,6 +250,7 @@ public class ChunkPipeline {
                 String.format("%.4f", 1.0 - (double) distinctHash / chunks.size()));
     }
 
+    /** 送嵌文本的 sha256（小写 hex），用作 content_hash 与 chunkKey 后缀 */
     public static String sha256(String s) {
         try {
             byte[] d = MessageDigest.getInstance("SHA-256")

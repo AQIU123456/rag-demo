@@ -14,12 +14,18 @@ import lombok.Data;
 @Builder
 public class ChunkPolicy {
 
+    /** 子块最大 token 数，null 表示用全局 chunk.max-tokens */
     private Integer maxTokens;
+    /** 相邻子块重叠 token 数，null 表示用全局 chunk.overlap-tokens */
     private Integer overlapTokens;
+    /** 是否启用标题/条款结构感知，null 表示用全局 chunk.structure-aware */
     private Boolean structureAware;
+    /** 是否给送嵌文本加 [标题 > 章节] 前缀，null 表示用全局 chunk.context-prefix */
     private Boolean contextPrefix;
+    /** 是否启用父子索引，null 表示用全局 chunk.parent-child */
     private Boolean parentChild;
 
+    /** 全字段为空：完全按全局配置切分 */
     public static ChunkPolicy defaults() {
         return ChunkPolicy.builder().build();
     }
