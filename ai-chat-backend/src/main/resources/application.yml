@@ -86,11 +86,14 @@ chunk:
   current-acl-tag: public
   observability: true
 
-# 预留：Milvus 向量数据库配置（S3 物理删除切换时使用）
-# milvus:
-#   host: localhost
-#   port: 19530
-#   collection-name: knowledge_base
+milvus:
+  # 连接地址，URI + token 认证（token 形如 user:password）
+  uri: ${MILVUS_URI}
+  # 生产建议通过环境变量 MILVUS_TOKEN 注入，避免明文入库
+  token: ${MILVUS_TOKEN}
+  collection-name: ${MILVUS_COLLECTION:knowledge_base}
+  # 向量维度，需与 embedding 模型 qwen3.7-text-embedding-flash 一致（实测 1024）
+  dimension: ${MILVUS_DIMENSION:1024}
 
 logging:
   level:

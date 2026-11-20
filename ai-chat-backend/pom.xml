@@ -61,14 +61,12 @@
             <version>${langchain4j.version}</version>
         </dependency>
 
-        <!-- 预留：Milvus 向量数据库支持 (后续切换时使用) -->
-        <!-- 
+        <!-- Milvus 向量数据库支持（项目唯一向量存储实现） -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-milvus</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
-        -->
 
         
         <!-- Lombok -->

@@ -12,7 +12,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -67,40 +66,6 @@ public class KnowledgeDocumentService {
         }
     }
 
-    /** 同步重建（启动重建用），policy 传 null 表示完全按全局配置切分 */
-    private int rebuildNow(KnowledgeDocument doc) {
-        return chunkIndexingService == null ? 0 : chunkIndexingService.indexNow(doc, null);
-    }
-
-    /**
-     * 启动时从「单一事实源」重建索引（解决 InMemoryEmbeddingStore 重启丢失的问题）。
-     *
-     * <p>必须重新跑 {@link ChunkPipeline#split}：document_chunks 表只存原文 content，
-     * 带上下文前缀的送嵌文本不落库，直接拿表里 content 送嵌入会导致 hash 与向量错位。</p>
-     */
-    @PostConstruct
-    public void reEmbedExistingDocuments() {
-        List<KnowledgeDocument> documents;
-        try {
-            documents = documentRepository.findAll();
-        } catch (Exception e) {
-            System.err.println("启动重建跳过：数据库不可用 - " + e.getMessage());
-            return;
-        }
-        int ok = 0;
-        for (KnowledgeDocument doc : documents) {
-            try {
-                int count = rebuildNow(doc);
-                ok++;
-                System.out.println("重建索引完成: " + doc.getTitle() + " (" + count + " 块)");
-            } catch (Exception e) {
-                // 单个文档失败不阻断启动
-                System.err.println("重建索引失败 (" + doc.getTitle() + "): " + e.getMessage());
-            }
-        }
-        System.out.println("索引重建完成，共处理 " + documents.size() + " 个文档，成功 " + ok + " 个");
-    }
-    
     /**
      * 上传纯文本文档
      * 预留接口：后续可扩展 PDF、Word 等其他格式
