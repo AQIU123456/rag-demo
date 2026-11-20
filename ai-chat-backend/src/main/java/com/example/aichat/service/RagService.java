@@ -1,5 +1,6 @@
 package com.example.aichat.service;
 
+import com.example.aichat.config.RerankConfig;
 import com.example.aichat.security.PromptInjectionGuard;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -7,6 +8,7 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,11 +25,22 @@ public class RagService {
     private final ChatLanguageModel chatLanguageModel;
     /** 检索门面：内部已完成混合召回、过滤与精排 */
     private final EmbeddingService embeddingService;
+    /** 相似度过滤：最高分不够格时直接拒答，省掉一次生成开销并防止硬编 */
+    private final RelevanceFilter relevanceFilter;
 
-    public RagService(ChatLanguageModel chatLanguageModel, 
+    /** 兼容单测与遗留调用：使用默认配置，过滤开关不生效，行为与改造前一致 */
+    public RagService(ChatLanguageModel chatLanguageModel,
                      EmbeddingService embeddingService) {
+        this(chatLanguageModel, embeddingService, new RelevanceFilter(new RerankConfig()));
+    }
+
+    @Autowired
+    public RagService(ChatLanguageModel chatLanguageModel,
+                     EmbeddingService embeddingService,
+                     RelevanceFilter relevanceFilter) {
         this.chatLanguageModel = chatLanguageModel;
         this.embeddingService = embeddingService;
+        this.relevanceFilter = relevanceFilter;
     }
 
     /**
@@ -37,11 +50,21 @@ public class RagService {
      * @return RAG 问答结果
      */
     public RagResponse answerWithRag(String question, int maxResults) {
-        // 1. 从知识库中检索相关文档片段
+        // 1. 从知识库中检索相关文档片段（内部已完成混合召回、相似度过滤与精排）
         List<EmbeddingService.SearchResult> searchResults = 
             embeddingService.searchSimilar(
                 PromptInjectionGuard.sanitizeUserInput(question), maxResults);
-        
+
+        // 1.1 过滤后最高分仍不达标 → 跳过 LLM 直接拒答：
+        //     既省一次生成开销，也避免模型面对无关上下文硬编造成幻觉
+        if (relevanceFilter.shouldReject(searchResults)) {
+            return new RagResponse(
+                "知识库中没有找到与该问题相关的内容，建议换个说法或补充相关文档后再试。",
+                "未找到相关知识库内容。",
+                searchResults,
+                List.of());
+        }
+
         // 2. 构建上下文内容
         String context = buildContext(searchResults);
         

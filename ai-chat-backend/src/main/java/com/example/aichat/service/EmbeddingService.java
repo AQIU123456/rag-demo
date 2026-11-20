@@ -35,17 +35,21 @@ public class EmbeddingService {
     private final ChunkIndexingService chunkIndexingService;
     /** 仅兼容包装 embedAndStore 使用 */
     private final KnowledgeDocumentRepository documentRepository;
+    /** 相似度过滤：精排后按语义相关度卡阈值 */
+    private final RelevanceFilter relevanceFilter;
 
     public EmbeddingService(EmbeddingModel embeddingModel,
                             RerankService rerankService,
                             ChunkIndex chunkIndex,
                             ChunkIndexingService chunkIndexingService,
-                            KnowledgeDocumentRepository documentRepository) {
+                            KnowledgeDocumentRepository documentRepository,
+                            RelevanceFilter relevanceFilter) {
         this.embeddingModel = embeddingModel;
         this.rerankService = rerankService;
         this.chunkIndex = chunkIndex;
         this.chunkIndexingService = chunkIndexingService;
         this.documentRepository = documentRepository;
+        this.relevanceFilter = relevanceFilter;
     }
 
     /**
@@ -115,11 +119,16 @@ public class EmbeddingService {
             results.add(toSearchResult(hit));
         }
 
-        // 3. 精排（失败会内部降级为向量序），并截断到 maxResults
+        // 3. 精排（失败会内部降级为向量序），并截断到 maxResults。
+        //    reranked 标记最终分数是否真的来自精排：降级后分数尺度变了，不能拿去卡阈值。
+        boolean reranked = false;
         if (rerankEnabled && results.size() > 1) {
-            results = applyRerank(query, results, maxResults);
+            RerankOutcome outcome = applyRerank(query, results, maxResults);
+            results = outcome.results;
+            reranked = outcome.reranked;
         }
-        return results;
+        // 4. 相似度过滤：只有精排分跨查询可比，其余情况原样透传
+        return relevanceFilter.apply(results, reranked);
     }
 
     /**
@@ -158,8 +167,13 @@ public class EmbeddingService {
         }
     }
 
-    /** 对粗排召回结果执行重排精排，保留全部溯源字段 */
-    private List<SearchResult> applyRerank(String query, List<SearchResult> candidates, int topN) {
+    /**
+     * 对粗排召回结果执行重排精排，保留全部溯源字段。
+     *
+     * <p>返回值额外带上 {@code reranked} 标记：精排失败会降级为向量序，此时分数尺度已变，
+     * 调用方不能拿它去做相似度过滤，否则会按错误的量纲误杀候选。</p>
+     */
+    private RerankOutcome applyRerank(String query, List<SearchResult> candidates, int topN) {
         try {
             List<String> documents = new ArrayList<>();
             double[] vectorScores = new double[candidates.size()];
@@ -173,16 +187,29 @@ public class EmbeddingService {
             List<RerankService.RerankResult> rerankResults =
                     rerankService.localRerankWithVectorScores(query, documents, vectorScores, topN);
 
-            List<SearchResult> reranked = new ArrayList<>();
+            List<SearchResult> rerankedList = new ArrayList<>();
             for (RerankService.RerankResult rr : rerankResults) {
                 SearchResult origin = candidates.get(rr.getIndex());
-                reranked.add(origin.withScore(rr.getRelevanceScore(), origin.getVectorScore()));
+                rerankedList.add(origin.withScore(rr.getRelevanceScore(), origin.getVectorScore()));
             }
-            log.debug("重排完成：候选 {} 条 -> 保留 {} 条", candidates.size(), reranked.size());
-            return reranked;
+            log.debug("重排完成：候选 {} 条 -> 保留 {} 条", candidates.size(), rerankedList.size());
+            return new RerankOutcome(rerankedList, true);
         } catch (Exception e) {
             log.warn("重排执行失败，降级为向量相似度排序：{}", e.getMessage());
-            return candidates.size() > topN ? new ArrayList<>(candidates.subList(0, topN)) : candidates;
+            List<SearchResult> fallback = candidates.size() > topN
+                    ? new ArrayList<>(candidates.subList(0, topN)) : candidates;
+            return new RerankOutcome(fallback, false);
+        }
+    }
+
+    /** 精排产出：结果 + 是否真的精排成功（降级时分数尺度不可用于过滤） */
+    private static class RerankOutcome {
+        private final List<SearchResult> results;
+        private final boolean reranked;
+
+        private RerankOutcome(List<SearchResult> results, boolean reranked) {
+            this.results = results;
+            this.reranked = reranked;
         }
     }
 

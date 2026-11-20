@@ -43,4 +43,46 @@ public class RerankConfig {
      * 调用远程重排接口的超时时间（毫秒），超时后自动降级为纯向量排序
      */
     private int timeoutMs = 5000;
+
+    /**
+     * 相似度过滤总开关：false 时检索结果原样透传，行为与改造前完全一致
+     */
+    private boolean filterEnabled = true;
+
+    /**
+     * 精排后的绝对最低分——本地兜底尺度（api-url 为空时生效）。
+     * 本地分 = 0.7×字符二元组重合度 + 0.3×向量分，中文长文档天然偏低，故取小值。
+     */
+    private double minRelevanceScore = 0.10;
+
+    /**
+     * 精排后的绝对最低分——远程交叉编码器尺度（api-url 非空时生效）。
+     * bge-reranker 一类模型 sigmoid 后相关命中通常在 0.3 以上。
+     */
+    private double remoteMinRelevanceScore = 0.25;
+
+    /**
+     * 相对阈值：低于「本次最高分 × 该比例」的候选一并丢弃，用于抵抗跨查询的分数漂移
+     */
+    private double relevanceRatio = 0.4;
+
+    /**
+     * 无论分数多低都至少保留的条数，防止过滤过狠导致上下文全空
+     */
+    private int minKeep = 1;
+
+    /**
+     * 拒答开关：最高分低于对应拒答阈值时跳过 LLM，直接返回「无相关内容」
+     */
+    private boolean rejectEnabled = true;
+
+    /**
+     * 拒答阈值——本地兜底尺度（api-url 为空时生效），须低于 minRelevanceScore
+     */
+    private double rejectThreshold = 0.05;
+
+    /**
+     * 拒答阈值——远程交叉编码器尺度（api-url 非空时生效），须低于 remoteMinRelevanceScore
+     */
+    private double remoteRejectThreshold = 0.15;
 }

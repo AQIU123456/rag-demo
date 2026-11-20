@@ -46,6 +46,22 @@ rerank:
   # 远程重排调用超时时间（毫秒），超时自动降级为本地/向量排序
   timeout-ms: 5000
 
+  # 相似度过滤（精排后执行）：低于阈值的候选不送 LLM，全不达标则直接拒答
+  # 注意：精排分有两套尺度，按 api-url 是否为空自动切换，切勿混用
+  filter-enabled: ${RETRIEVAL_FILTER_ENABLED:true}
+  # 本地兜底尺度的绝对最低分（api-url 为空时生效）
+  min-relevance-score: ${RETRIEVAL_MIN_SCORE:0.10}
+  # 远程交叉编码器尺度的绝对最低分（api-url 非空时生效）
+  remote-min-relevance-score: ${RETRIEVAL_REMOTE_MIN_SCORE:0.25}
+  # 相对阈值：低于「本次最高分 × 该比例」的候选一并丢弃
+  relevance-ratio: ${RETRIEVAL_RATIO:0.4}
+  # 至少保留条数，防止过滤过狠导致上下文全空
+  min-keep: ${RETRIEVAL_MIN_KEEP:1}
+  reject-enabled: ${RETRIEVAL_REJECT_ENABLED:true}
+  # 拒答阈值，须低于对应的 min-relevance-score
+  reject-threshold: ${RETRIEVAL_REJECT_SCORE:0.05}
+  remote-reject-threshold: ${RETRIEVAL_REMOTE_REJECT_SCORE:0.15}
+
 # 图 RAG（GraphRAG）功能配置：LLM 抽取实体关系构建知识图谱 + 一跳扩展增强问答
 graphrag:
   # 总开关：false 时 /api/graph/chat 行为退化为纯向量 RAG（不查询图谱）
