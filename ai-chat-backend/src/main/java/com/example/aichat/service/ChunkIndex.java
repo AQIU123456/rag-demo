@@ -31,14 +31,15 @@ import java.util.stream.Collectors;
  * <p><b>硬约束</b>：LangChain4j 0.29.1 的 {@code EmbeddingStore} 没有任何 remove 接口，
  * 因此本实现用「向量 id 墓碑 + liveIndex 白名单」做逻辑删除。只有经 {@link #reindex}
  * 写入的向量才对检索可见，任何绕过流水线直接 add 的旧向量自动不可见。
- * 切到 Milvus/Qdrant 后只需在 {@link #removeByDocId} 增加物理删除分支。</p>
+ * 切到 Milvus/Qdrant 后只需在 {@link #removeByDocId} 增加物理删除分支。
+ * 白名单为内存态，持久化库启动须经 {@link #restoreFromChunkRows} 从分块表恢复。</p>
  */
 @Service
 public class ChunkIndex {
 
     private static final Logger log = LoggerFactory.getLogger(ChunkIndex.class);
 
-    /** 底层向量库（当前为 InMemory，切 Milvus/Qdrant 时只换这一层） */
+    /** 底层向量库（当前为 Milvus，持久化；换实现时只换这一层） */
     private final EmbeddingStore<TextSegment> store;
     /** 用于把送嵌文本转成向量 */
     private final EmbeddingModel embeddingModel;
@@ -145,6 +146,46 @@ public class ChunkIndex {
         for (String id : ids) {
             liveIndex.remove(id);
         }
+    }
+
+    /**
+     * 从持久化分块表恢复检索白名单（<b>零嵌入 API 调用、不写向量库</b>）。
+     *
+     * <p>持久化向量库（Milvus）里向量重启不丢，但 {@link #liveIndex}/{@link #docVectors}/
+     * {@link #docChunks} 是纯内存态、重启即空；而 {@link #search} 的向量通道与 BM25 通道
+     * 都以 liveIndex 为白名单，不恢复则所有召回都会被过滤，知识库检索全空。</p>
+     *
+     * <p>用表内已落库的 vectorId + Chunk 元数据重建这三个结构即可让检索立即恢复，
+     * 不必也不应该重算向量。vectorId 为空的历史占位行跳过，与 reindex 可见性口径一致。
+     * 非侵入，不改动 {@link #reindex}。</p>
+     *
+     * @return 实际恢复进入白名单的向量数
+     */
+    public synchronized int restoreFromChunkRows(Long docId, List<Chunk> chunks, List<String> vectorIds) {
+        if (chunks == null || chunks.isEmpty() || vectorIds == null) {
+            return 0;
+        }
+        // 先本地构造，全部就绪后再整体切换内部状态（与 reindex 一致，避免部分恢复）
+        Map<String, IndexedChunk> restored = new LinkedHashMap<>();
+        List<String> restoredIds = new ArrayList<>(chunks.size());
+        for (int i = 0; i < chunks.size() && i < vectorIds.size(); i++) {
+            String id = vectorIds.get(i);
+            Chunk c = chunks.get(i);
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            TextSegment seg = TextSegment.from(c.getEmbeddedText(), metadataOf(docId, c));
+            restored.put(id, new IndexedChunk(id, c, seg));
+            restoredIds.add(id);
+        }
+        if (restored.isEmpty()) {
+            return 0;
+        }
+        liveIndex.putAll(restored);
+        docVectors.put(docId, restoredIds);
+        docChunks.put(docId, new ArrayList<>(chunks));
+        log.info("从分块表恢复检索白名单 docId={} vectors={}", docId, restoredIds.size());
+        return restoredIds.size();
     }
 
     /** 当前已写入的向量 id（未做墓碑过滤，仅供落表回填与调试） */

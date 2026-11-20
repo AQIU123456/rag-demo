@@ -9,8 +9,11 @@ import com.example.aichat.repository.DocumentChunkRepository;
 import com.example.aichat.repository.KnowledgeDocumentRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.Tokenizer;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -50,6 +53,10 @@ public class ChunkIndexingService {
     /** 嵌入模型名，落库用于「模型换代后哪些块需要重嵌」的排查 */
     @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}")
     private String embeddingModelName;
+
+    /** 启动从表恢复时用同口径估算 token；字段注入避免改动构造签名（非侵入） */
+    @Autowired
+    private Tokenizer tokenizer;
 
     public ChunkIndexingService(KnowledgeDocumentRepository documentRepository,
                                 DocumentChunkRepository chunkRepository,
@@ -113,7 +120,8 @@ public class ChunkIndexingService {
      * 同步重建主流程：切分 → 写向量 → 落分块表。
      *
      * <p>表与向量分两步写，天然存在不一致窗口：向量失败时表照常落库（文档可读、可编辑），
-     * 向量由下次启动重建补齐；表写入本身失败则抛异常，由调用方决定是否回滚。</p>
+     * 但该批次 vectorId 为空、启动恢复会跳过这些行，需重新上传或走重新生成分块补向量；
+     * 表写入本身失败则抛异常，由调用方决定是否回滚。</p>
      *
      * @param doc    文档实体（content 为切分事实源）
      * @param policy 策略覆盖，null 表示用全局配置
@@ -122,7 +130,7 @@ public class ChunkIndexingService {
     public int indexNow(KnowledgeDocument doc, ChunkPolicy policy) {
         // 1. 切分
         List<Chunk> chunks = chunkPipeline.split(doc, policy);
-        // 降级：嵌入 API 不可用时仍保证分块表与文档一致，向量由下次启动重建补齐
+        // 降级：嵌入 API 不可用时仍保证分块表与文档一致；该批次无向量，后续需重新生成补齐
         ChunkIndex.IndexResult result;
         try {
             result = chunkIndex.reindex(doc.getId(), chunks);
@@ -237,6 +245,91 @@ public class ChunkIndexingService {
         } else {
             chunkIndex.removeByDocId(docId);
         }
+    }
+
+    // ==================== 启动恢复（持久化向量库专用，零嵌入 API 调用） ====================
+
+    /**
+     * 启动时从 {@code document_chunks} 表恢复内存检索白名单。
+     *
+     * <p>向量本体在 Milvus 里重启不丢，但 {@code ChunkIndex} 的 liveIndex / docVectors / docChunks
+     * 是纯内存态、重启即空；若不恢复，检索的向量通道与 BM25 通道都会因白名单为空而过滤掉全部候选，
+     * 知识库等于「失忆」。本方法只把表内已落库的 vectorId 灌回白名单，<b>不调用嵌入 API、不写向量库</b>，
+     * 与已删除的「启动重算向量」是两回事。</p>
+     *
+     * <p>数据库不可用、单文档异常均只记日志不阻断启动。非侵入，不影响上传/编辑/重新生成等实时写路径。</p>
+     */
+    @PostConstruct
+    public void restoreIndexOnStartup() {
+        List<KnowledgeDocument> documents;
+        try {
+            documents = documentRepository.findAll();
+        } catch (Exception e) {
+            log.warn("启动索引恢复跳过：数据库不可用 - {}", e.getMessage());
+            return;
+        }
+        int restoredDocs = 0;
+        int restoredVectors = 0;
+        for (KnowledgeDocument doc : documents) {
+            try {
+                int n = restoreDocFromRows(doc);
+                if (n > 0) {
+                    restoredDocs++;
+                    restoredVectors += n;
+                }
+            } catch (Exception e) {
+                // 单文档失败不阻断启动（例如历史分块缺 vectorId 或脏数据）
+                log.warn("启动索引恢复失败 docId={} title={} reason={}",
+                        doc.getId(), doc.getTitle(), e.getMessage());
+            }
+        }
+        log.info("启动索引恢复完成 documents={} vectors={}", restoredDocs, restoredVectors);
+    }
+
+    /**
+     * 从表内行恢复单个文档的检索白名单。
+     *
+     * <p>送嵌文本 / hash / token 用与 {@link DocumentChunkService} 表内重建完全相同的口径生成，
+     * 保证 {@code metadataOf} 产出的元数据键与运行时一致；vectorId 直接取表内已落库值，不重算向量。
+     * 跳过 vectorId 为空的历史占位行。</p>
+     *
+     * @return 恢复的向量数（0 表示该文档无可恢复向量）
+     */
+    private int restoreDocFromRows(KnowledgeDocument doc) {
+        List<DocumentChunk> rows = chunkRepository.findByDocumentIdOrderByChunkIndex(doc.getId());
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        String safeTitle = com.example.aichat.security.PromptInjectionGuard.sanitizeLabel(
+                doc.getTitle() == null ? "未命名文档" : doc.getTitle());
+
+        List<Chunk> chunks = new ArrayList<>(rows.size());
+        List<String> vectorIds = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            DocumentChunk row = rows.get(i);
+            String content = row.getContent() == null ? "" : row.getContent();
+            String embedded = chunkPipeline.embedText(safeTitle, row.getSectionPath(), content);
+            String hash = ChunkPipeline.sha256(embedded);
+            int tokens = row.getTokenCount() == null
+                    ? tokenizer.estimateTokenCountInText(embedded) : row.getTokenCount();
+            chunks.add(Chunk.builder()
+                    .documentId(doc.getId())
+                    .documentTitle(safeTitle)
+                    .index(i)
+                    .chunkKey("doc_" + doc.getId() + "_" + i + "_" + hash.substring(0, 8))
+                    .sectionPath(row.getSectionPath())
+                    .content(content)
+                    .embeddedText(embedded)
+                    .contentHash(hash)
+                    .tokenCount(tokens)
+                    .parentKey(row.getParentId())
+                    .truncated(tokens > props.getMaxTokens() * 1.2)
+                    .build());
+            vectorIds.add(row.getVectorId());
+        }
+        // 重排 prev/next（及开启时的父子键），与运行时 relink 口径一致
+        chunkPipeline.relink(chunks);
+        return chunkIndex.restoreFromChunkRows(doc.getId(), chunks, vectorIds);
     }
 
 }
