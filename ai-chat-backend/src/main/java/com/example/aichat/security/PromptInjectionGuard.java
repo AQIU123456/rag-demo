@@ -54,7 +54,8 @@ public final class PromptInjectionGuard {
     public static final String DATA_TAG_OPEN = "<UNTRUSTED_DATA>";
     public static final String DATA_TAG_CLOSE = "</UNTRUSTED_DATA>";
 
-    private static final String REDACTED = "「已移除：疑似指令注入内容」";
+    /** 命中注入句时的替换文本：置空表示静默删除整句，不在正文/文档里留下任何可见标记 */
+    private static final String REDACTED = "";
     private static final String BLOCKED_MESSAGE =
             "抱歉，本次回答触发安全策略（疑似内部指令泄露），已被拦截。请重新提问。";
     private static final String TRUNCATED = "「内容超长已截断」";
