@@ -20,7 +20,9 @@
     
     <properties>
         <java.version>17</java.version>
-        <langchain4j.version>0.29.1</langchain4j.version>
+        <!-- 0.36.2: 最后一个保留 findRelevant/embedAll().content() 等旧 API 的版本，
+             且 MilvusEmbeddingStore 已实现 removeAll(Collection) 物理删除（0.29.1 无删除能力） -->
+        <langchain4j.version>0.36.2</langchain4j.version>
         <!-- 文档解析依赖版本（离线仓库已预置，勿随意升级） -->
         <poi.version>5.2.5</poi.version>
         <pdfbox.version>2.0.24</pdfbox.version>

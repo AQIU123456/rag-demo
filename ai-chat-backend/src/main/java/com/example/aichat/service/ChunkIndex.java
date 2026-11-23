@@ -28,10 +28,10 @@ import java.util.stream.Collectors;
 /**
  * 唯一索引入口：幂等 upsert、墓碑删除、版本/权限过滤、BM25+RRF 混合召回、多样性控制。
  *
- * <p><b>硬约束</b>：LangChain4j 0.29.1 的 {@code EmbeddingStore} 没有任何 remove 接口，
- * 因此本实现用「向量 id 墓碑 + liveIndex 白名单」做逻辑删除。只有经 {@link #reindex}
- * 写入的向量才对检索可见，任何绕过流水线直接 add 的旧向量自动不可见。
- * 切到 Milvus/Qdrant 后只需在 {@link #removeByDocId} 增加物理删除分支。
+ * <p><b>删除策略</b>：LangChain4j 0.36.2 起 {@code EmbeddingStore} 提供 {@code removeAll(ids)}，
+ * {@link #removeByDocId} 在内存墓碑之外同步做向量库物理删除，杜绝孤儿向量堆积；
+ * 墓碑 + liveIndex 白名单仍保留作兜底，物理删除失败时检索侧依然立即不可见。
+ * 只有经 {@link #reindex} 写入的向量才对检索可见，绕过流水线直接 add 的向量自动不可见。
  * 白名单为内存态，持久化库启动须经 {@link #restoreFromChunkRows} 从分块表恢复。</p>
  */
 @Service
@@ -135,16 +135,28 @@ public class ChunkIndex {
         return s == null ? "" : s;
     }
 
-    /** 逻辑删除：0.29.1 无 remove，用向量 id 墓碑 + liveIndex 移除 */
+    /**
+     * 删除单个文档的全部向量：内存墓碑（检索立即不可见）+ 向量库物理删除（杜绝孤儿向量堆积）。
+     *
+     * <p>物理删除依赖 EmbeddingStore.removeAll(ids)，0.36.2 起 Milvus/InMemory 均已实现。
+     * 保留墓碑作为兜底：即使物理删除失败（网络抖动/权限），检索侧依然立即不可见；
+     * 物理删除异常只记录不抛出，维持「删向量失败不阻断主流程」的既有降级语义。</p>
+     */
     public void removeByDocId(Long docId) {
         List<String> ids = docVectors.remove(docId);
         docChunks.remove(docId);
-        if (ids == null) {
+        if (ids == null || ids.isEmpty()) {
             return;
         }
         tombstones.addAll(ids);
         for (String id : ids) {
             liveIndex.remove(id);
+        }
+        // 物理删除：0.36.2 提供 removeAll(Collection)，失败仅告警，不影响内存清理结果
+        try {
+            store.removeAll(ids);
+        } catch (Exception e) {
+            log.warn("向量物理删除失败 docId={} ids={} reason={}", docId, ids.size(), e.getMessage());
         }
     }
 
