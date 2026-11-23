@@ -1,0 +1,117 @@
+/* Markdown 回答的全局样式。
+   必须通过全局样式生效：v-html 生成的节点不带 scoped 的 data-v 属性。 */
+
+.markdown-body {
+  white-space: normal; /* 覆盖 .message-text 的 pre-wrap，由标签自身控制换行 */
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.markdown-body h1 { font-size: 1.5em; }
+.markdown-body h2 { font-size: 1.35em; }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.1em; }
+.markdown-body h5,
+.markdown-body h6 { font-size: 1em; }
+
+.markdown-body p { margin: 0.6em 0; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.6em;
+}
+.markdown-body li { margin: 0.25em 0; }
+.markdown-body li > ul,
+.markdown-body li > ol { margin: 0.25em 0; }
+
+.markdown-body strong { font-weight: 600; }
+
+.markdown-body code {
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.markdown-body pre {
+  background: #1e1e24;
+  color: #e8e8ea;
+  padding: 12px 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: 0.88em;
+}
+
+.markdown-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.2em 0.9em;
+  border-left: 3px solid #667eea;
+  color: #555;
+  background: rgba(102, 126, 234, 0.06);
+}
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
+
+.markdown-body a {
+  color: #667eea;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #dcdcdc;
+  padding: 6px 10px;
+  text-align: left;
+}
+.markdown-body th { background: rgba(0, 0, 0, 0.04); font-weight: 600; }
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1em 0;
+}
+
+.markdown-body img { max-width: 100%; }
+
+/* 引用来源卡片内的 Markdown：缩小字号、收紧间距，避免撑开原文片段 */
+.citation-content.markdown-body { font-size: 13px; line-height: 1.5; }
+.citation-content.markdown-body pre { margin: 0.5em 0; padding: 8px 10px; }
+.citation-content.markdown-body h1,
+.citation-content.markdown-body h2,
+.citation-content.markdown-body h3 { font-size: 1.1em; margin: 0.5em 0 0.3em; }
+
+/* 用户气泡是深紫色背景，覆盖其上的行内代码/链接需反向配色 */
+.message.user .markdown-body code { background: rgba(255, 255, 255, 0.2); }
+.message.user .markdown-body a { color: #fff; }
+.message.user .markdown-body blockquote { color: inherit; background: rgba(255, 255, 255, 0.12); }
+.message.user .markdown-body th { background: rgba(255, 255, 255, 0.12); }
+.message.user .markdown-body td,
+.message.user .markdown-body th { border-color: rgba(255, 255, 255, 0.3); }

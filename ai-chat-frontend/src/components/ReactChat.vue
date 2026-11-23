@@ -45,7 +45,9 @@
             {{ message.role === 'user' ? '👤' : '🤖' }}
           </div>
           <div class="message-content">
-            <div class="message-text">{{ message.text }}</div>
+            <!-- 用户消息保持纯文本；AI 回答按 Markdown 渲染 -->
+            <div v-if="message.role === 'user'" class="message-text">{{ message.text }}</div>
+            <div v-else class="message-text markdown-body" v-html="renderMarkdown(message.text)"></div>
             
             <!-- ReAct 推理过程展示 -->
             <div v-if="message.reasoningSteps && showReasoning" class="reasoning-section">
@@ -175,6 +177,8 @@
 </template>
 
 <script>
+import { renderMarkdown } from '../utils/markdown'
+
 export default {
   name: 'ReactChat',
   
@@ -200,6 +204,7 @@ export default {
   },
   
   methods: {
+    renderMarkdown,
     async sendQuestion() {
       if (!this.question.trim() || this.loading) return;
       

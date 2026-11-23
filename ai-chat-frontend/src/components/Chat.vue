@@ -10,7 +10,9 @@
         :key="index"
         :class="['message', message.role]"
       >
-        <div class="message-content">{{ message.content }}</div>
+        <!-- 用户消息保持纯文本；AI 回答按 Markdown 渲染 -->
+        <div v-if="message.role === 'user'" class="message-content">{{ message.content }}</div>
+        <div v-else class="message-content markdown-body" v-html="renderMarkdown(message.content)"></div>
         <div class="message-time">{{ formatTime(message.createdAt) }}</div>
       </div>
       <div v-if="loading" class="message assistant">
@@ -34,6 +36,7 @@
 
 <script>
 import axios from 'axios'
+import { renderMarkdown } from '../utils/markdown'
 
 export default {
   name: 'Chat',
@@ -52,6 +55,7 @@ export default {
     }
   },
   methods: {
+    renderMarkdown,
     async sendMessage() {
       if (!this.userInput.trim() || this.loading) return
       

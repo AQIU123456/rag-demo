@@ -17,7 +17,9 @@
             {{ message.role === 'user' ? '👤' : '🤖' }}
           </div>
           <div class="message-content">
-            <div class="message-text">{{ message.text }}</div>
+            <!-- 用户消息保持纯文本；AI 回答按 Markdown 渲染 -->
+            <div v-if="message.role === 'user'" class="message-text">{{ message.text }}</div>
+            <div v-else class="message-text markdown-body" v-html="renderMarkdown(message.text)"></div>
             
             <!-- RAG 引用来源展示 -->
             <div v-if="message.citations && message.citations.length > 0" class="citations-section">
@@ -32,7 +34,8 @@
                     <span class="citation-index">[{{ idx + 1 }}]</span>
                     <span class="citation-score">相似度：{{ (citation.score * 100).toFixed(1) }}%</span>
                   </div>
-                  <div class="citation-content">{{ citation.content }}</div>
+                  <!-- 引用内容是知识库原文片段，同样按 Markdown 渲染（复用同一安全渲染器） -->
+                  <div class="citation-content markdown-body" v-html="renderMarkdown(citation.content)"></div>
                   <div class="citation-source" v-if="citation.source">
                     来源：{{ formatSource(citation.source) }}
                   </div>
@@ -102,6 +105,7 @@
 
 <script>
 import axios from 'axios'
+import { renderMarkdown } from '../utils/markdown'
 
 export default {
   name: 'RagChat',
@@ -114,6 +118,7 @@ export default {
     }
   },
   methods: {
+    renderMarkdown,
     async sendQuestion() {
       if (!this.question.trim() || this.loading) return
       
