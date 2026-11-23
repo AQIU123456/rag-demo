@@ -20,7 +20,12 @@ public class ChunkStrategyDTO {
     private String code;
 
     /**
-     * 策略描述
+     * 策略描述（下拉框简称）
      */
     private String description;
+
+    /**
+     * 策略详细说明（选中后展示，帮助用户理解各策略差异）
+     */
+    private String detail;
 }

@@ -224,6 +224,74 @@ class ChunkPipelineTest {
     }
 
     // ------------------------------------------------------------------
+    // 策略驱动切分：每个策略用不同的 DocumentSplitter + 自带增强配置
+    // ------------------------------------------------------------------
+
+    private String headedDoc() {
+        return "# 第一章 请假\n员工请假需提前3天申请，由主管审批后生效。\n"
+                + "## 1.1 报销\n差旅结束后7个工作日内提交报销单，逾期不予受理。\n"
+                + "## 1.2 考勤\n每月迟到累计超过三次需书面说明。\n";
+    }
+
+    @Test
+    void allStrategiesShouldBeExposedToFrontend() {
+        // 四种项目已实现的切分方式都必须能被前端枚举并选择
+        assertEquals(4, ChunkStrategy.values().length);
+        assertEquals(ChunkStrategy.STRUCTURE_AWARE, ChunkStrategy.fromCode("STRUCTURE_AWARE"));
+        assertEquals(ChunkStrategy.RECURSIVE, ChunkStrategy.fromCode("unknown"));
+    }
+
+    @Test
+    void structureAwareStrategyShouldProduceSectionPathWithoutGlobalSwitch() {
+        // 全局结构开关为 false（setUp），但选了 STRUCTURE_AWARE 策略就必须解析章节
+        assertFalse(props.isStructureAware());
+        List<Chunk> chunks = pipeline.split(doc(10L, "制度", headedDoc()),
+                ChunkPolicy.of(ChunkStrategy.STRUCTURE_AWARE));
+
+        assertTrue(chunks.stream().anyMatch(c -> c.getSectionPath() != null
+                        && c.getSectionPath().contains("第一章")),
+                "STRUCTURE_AWARE 策略应产出章节路径，不受全局 structure-aware=false 影响");
+        // 该策略不带上下文前缀：送嵌文本应等于正文原文
+        assertTrue(chunks.stream().allMatch(c -> c.getEmbeddedText().equals(c.getContent())),
+                "STRUCTURE_AWARE 不应加上下文前缀");
+    }
+
+    @Test
+    void recursiveStrategyShouldIgnoreGlobalStructureAwareSwitch() {
+        // 反向验证：全局开关 true，但选 RECURSIVE 策略时仍只做递归切分，不解析章节
+        props.setStructureAware(true);
+        List<Chunk> chunks = pipeline.split(doc(11L, "制度", headedDoc()),
+                ChunkPolicy.of(ChunkStrategy.RECURSIVE));
+
+        assertTrue(chunks.stream().allMatch(c -> c.getSectionPath() == null),
+                "RECURSIVE 策略不得产出章节路径，策略配置优先于全局开关");
+    }
+
+    @Test
+    void semanticStrategyShouldAddContextPrefixWithoutGlobalSwitch() {
+        // 全局前缀开关为 false（setUp），SEMANTIC 策略自带前缀
+        assertFalse(props.isContextPrefix());
+        List<Chunk> chunks = pipeline.split(doc(12L, "考勤制度", headedDoc()),
+                ChunkPolicy.of(ChunkStrategy.SEMANTIC));
+
+        assertTrue(chunks.stream().allMatch(c -> c.getEmbeddedText().startsWith("[考勤制度")),
+                "SEMANTIC 策略应带 [标题 > 章节] 前缀，不受全局 context-prefix=false 影响");
+    }
+
+    @Test
+    void parentChildStrategyShouldBuildParentKeysWithoutGlobalSwitch() {
+        // 全局父子开关为 false（默认），PARENT_CHILD 策略自带父子索引
+        assertFalse(props.isParentChild());
+        props.setParentMaxTokens(120);
+        List<Chunk> chunks = pipeline.split(doc(13L, "制度", longChineseText()),
+                ChunkPolicy.of(ChunkStrategy.PARENT_CHILD));
+
+        assertTrue(chunks.size() > 2);
+        assertNotNull(chunks.get(0).getParentKey(),
+                "PARENT_CHILD 策略应建立父子索引，不受全局 parent-child=false 影响");
+    }
+
+    // ------------------------------------------------------------------
     // Stub：固定维度向量，避免测试依赖外部 Embedding API
     // ------------------------------------------------------------------
     private static Embedding vectorOf(String text) {

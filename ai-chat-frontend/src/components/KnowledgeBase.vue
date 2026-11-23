@@ -165,6 +165,7 @@
           <button @click="regenerateChunks" class="toolbar-btn regenerate" :disabled="loadingChunks">重新生成分块</button>
           <span class="chunk-count">共 {{ chunks.length }} 个分块</span>
         </div>
+        <div v-if="selectedStrategyDetail" class="strategy-hint">{{ selectedStrategyDetail }}</div>
 
         <div class="chunks-list">
           <div v-if="loadingChunks" class="loading">加载分块中...</div>
@@ -271,6 +272,13 @@ export default {
       savingChunk: false,
       chunkStrategies: [],
       selectedStrategy: 'RECURSIVE'
+    }
+  },
+  computed: {
+    // 当前选中策略的说明文字，随下拉选择实时变化
+    selectedStrategyDetail() {
+      const current = this.chunkStrategies.find(s => s.code === this.selectedStrategy)
+      return current ? current.detail : ''
     }
   },
   mounted() {
@@ -1129,6 +1137,17 @@ mark {
 .strategy-select:focus {
   outline: none;
   border-color: #667eea;
+}
+
+.strategy-hint {
+  margin: -8px 0 16px;
+  padding: 8px 14px;
+  background: #eef2ff;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  color: #4a5568;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .toolbar-btn {

@@ -90,6 +90,7 @@ public class DocumentChunkController {
                 .map(strategy -> ChunkStrategyDTO.builder()
                         .code(strategy.getCode())
                         .description(strategy.getDescription())
+                        .detail(strategy.getDetail())
                         .build())
                 .collect(Collectors.toList());
         return ResponseEntity.ok(strategies);

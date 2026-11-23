@@ -5,6 +5,7 @@ import com.example.aichat.domain.chunk.Chunk;
 import com.example.aichat.domain.chunk.ChunkPolicy;
 import com.example.aichat.domain.chunk.StructureAwareSplitter;
 import com.example.aichat.entity.KnowledgeDocument;
+import com.example.aichat.enums.ChunkStrategy;
 import com.example.aichat.security.PromptInjectionGuard;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
@@ -48,30 +49,41 @@ public class ChunkPipeline {
     /**
      * 按「本次策略覆盖 + 全局配置」执行完整切分。
      *
-     * <p>policy 中为 null 的字段一律回落到 {@link ChunkProperties}，
-     * 因此前端三种策略只需覆盖差异项，不会污染全局默认行为。</p>
+     * <p>若 policy 指定了 {@link ChunkStrategy}，则由策略工厂直接产出底层切分器，
+     * 增强开关也取策略自带值（不受全局开关影响），保证「选哪个策略就得到哪种切分」；
+     * policy 未指定策略时（上传 / 编辑 / 启动重建 / 单测默认路径）沿用 {@link ChunkProperties}
+     * 全局配置的旧行为，保持完全兼容。</p>
      *
      * @param doc    待切分文档（content 为唯一事实源，title 参与上下文前缀）
      * @param policy 本次策略覆盖，可为 null
      * @return 有序的分块列表，已带 prev/next、父子键、hash 与 token 数
      */
     public List<Chunk> split(KnowledgeDocument doc, ChunkPolicy policy) {
-        // 1. 解析本次生效参数：策略覆盖优先，未指定则取全局配置
+        // 1. 解析本次生效参数：策略自带配置/显式覆盖优先，未指定则取全局配置
         ChunkPolicy p = policy == null ? ChunkPolicy.defaults() : policy;
+        ChunkStrategy strategy = p.getStrategy();
         int maxTokens = p.getMaxTokens() != null ? p.getMaxTokens() : props.getMaxTokens();
         int overlap = p.getOverlapTokens() != null ? p.getOverlapTokens() : props.getOverlapTokens();
-        boolean structureAware = p.getStructureAware() != null
-                ? p.getStructureAware() : props.isStructureAware();
         boolean contextPrefix = p.getContextPrefix() != null
-                ? p.getContextPrefix() : props.isContextPrefix();
+                ? p.getContextPrefix()
+                : (strategy != null ? strategy.isContextPrefix() : props.isContextPrefix());
         boolean parentChild = p.getParentChild() != null
-                ? p.getParentChild() : props.isParentChild();
+                ? p.getParentChild()
+                : (strategy != null ? strategy.isParentChild() : props.isParentChild());
 
-        // 2. 组装切分器：按 token 计量的递归切分器做底座，结构感知器在其上按标题/条款先分段
-        DocumentSplitter base = DocumentSplitters.recursive(maxTokens, overlap, tokenizer);
-        DocumentSplitter splitter = structureAware
-                ? new StructureAwareSplitter(base, props.getHardMaxChars())
-                : base;
+        // 2. 组装切分器：指定策略时由策略工厂产出（真正不同的切分方式）；
+        //    未指定策略时保留旧逻辑——递归底座 + 全局开关决定是否套结构感知器
+        DocumentSplitter splitter;
+        if (strategy != null) {
+            splitter = strategy.createSplitter(maxTokens, overlap, props.getHardMaxChars(), tokenizer);
+        } else {
+            DocumentSplitter base = DocumentSplitters.recursive(maxTokens, overlap, tokenizer);
+            boolean structureAware = p.getStructureAware() != null
+                    ? p.getStructureAware() : props.isStructureAware();
+            splitter = structureAware
+                    ? new StructureAwareSplitter(base, props.getHardMaxChars())
+                    : base;
+        }
 
         // 3. 切分后过 token 预算硬兜底：0.29.1 的中文句子切分不可靠，必须二次限长
         String raw = doc.getContent() == null ? "" : doc.getContent();
