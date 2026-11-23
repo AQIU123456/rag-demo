@@ -1,0 +1,322 @@
+[
+  {
+    "id": "Q01",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "员工的标准工作时间是什么？午休时间算工时吗？",
+    "reference": "标准工作时间为周一至周五 09:00—18:00，午休 12:00—13:00 不计入工时。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q02",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "病假每年最多可以请多少天？最小请假单位是多少？",
+    "reference": "病假每年不超过 15 天，最小请假单位为 1 天，工资按当地法规执行。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q03",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "婚假有多少天？是不是带薪假期？",
+    "reference": "婚假为 10 天，最小请假单位 1 天，属于带薪假期。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q04",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "请假超过 3 天需要哪些人审批？",
+    "reference": "超过 3 天的请假须在直属主管和部门负责人审批之后，再经 HRBP 审批。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q05",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "差旅结束后多久之内必须提交报销单？",
+    "reference": "差旅结束后 7 个工作日内须在 OA 提交报销单，并附发票、行程单和出差申请单编号。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q06",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "一线城市出差的住宿费每晚上限是多少？",
+    "reference": "一线城市（北京、上海、广州、深圳）住宿费上限为每晚 600 元（含税）。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q07",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "员工入职当天需要携带哪些材料？",
+    "reference": "入职当天需携带身份证原件及复印件 2 份、学历学位证书原件、离职证明、近 3 个月体检报告、一寸照片 2 张和银行卡信息。",
+    "source_docs": ["文档三：入职与离职管理"]
+  },
+  {
+    "id": "Q08",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "试用期工资是转正工资的百分之多少？",
+    "reference": "试用期工资为转正工资的 80%，且不低于当地最低工资标准。",
+    "source_docs": ["文档三：入职与离职管理"]
+  },
+  {
+    "id": "Q09",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "公司每月几号发工资？遇到节假日怎么办？",
+    "reference": "每月 15 日发放上月工资，遇节假日提前至最近工作日发放。",
+    "source_docs": ["文档四：薪酬与福利"]
+  },
+  {
+    "id": "Q10",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "住房公积金的公司缴纳比例是多少？个人呢？",
+    "reference": "公司按员工上一年度月平均工资的 12% 缴纳住房公积金，个人按同比例缴纳。",
+    "source_docs": ["文档四：薪酬与福利"]
+  },
+  {
+    "id": "Q11",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "公司账号密码有什么长度和更换周期要求？",
+    "reference": "密码长度不少于 12 位，须包含大小写字母、数字、符号中的至少 3 类，每 90 天更换一次。",
+    "source_docs": ["文档五：信息安全与密钥管理"]
+  },
+  {
+    "id": "Q12",
+    "category": "single_hop",
+    "difficulty": "easy",
+    "question": "生产环境的密钥应该存放在哪里？可以写在配置文件里吗？",
+    "reference": "生产环境密钥必须存放在密钥管理系统（KMS）中，禁止硬编码在代码或配置文件中。",
+    "source_docs": ["文档五：信息安全与密钥管理"]
+  },
+  {
+    "id": "Q13",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "专员出差去深圳，住宿费和市内交通费的额度分别是多少？",
+    "reference": "深圳属于一线城市，专员住宿上限为每晚 600 元（含税）；专员市内交通为每日 80 元包干。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q14",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "总监及以上职级出差可以坐公务舱吗？高铁和市内交通怎么规定？",
+    "reference": "总监及以上职级飞机可乘公务舱，高铁可乘一等座，市内交通实报实销。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q15",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "经理级员工去北京出差，交通和住宿标准分别是什么？",
+    "reference": "经理级飞机乘经济舱、高铁乘一等座，市内交通每日 120 元包干；北京属于一线城市，住宿上限每晚 600 元。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q16",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "工作日加班 3 小时可以折算多少调休？",
+    "reference": "工作日加班满 1 小时起计，按 1:1 折算调休，因此 3 小时加班折算 3 小时调休。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q17",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "法定节假日加班 8 小时折算多少小时调休？",
+    "reference": "法定节假日加班按 1:3 折算调休，8 小时加班折算 24 小时调休。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q18",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "L3 机密和 L4 绝密数据外发分别需要谁审批？",
+    "reference": "L3 机密数据外发需部门负责人加信息安全部审批；L4 绝密数据外发需 CTO 加法务审批。",
+    "source_docs": ["文档五：信息安全与密钥管理"]
+  },
+  {
+    "id": "Q19",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "P1 级别故障的响应时限和解决时限各是多少？",
+    "reference": "P1 级故障（全员无法办公或核心系统不可用）须 15 分钟内响应，4 小时内解决。",
+    "source_docs": ["文档六：IT 支持与办公设备"]
+  },
+  {
+    "id": "Q20",
+    "category": "table_numeric",
+    "difficulty": "medium",
+    "question": "外部培训一次最多能报多少钱？一年有几次晋升评审？",
+    "reference": "外部培训单次费用上限为 3000 元每人每年；晋升评审每年 4 月和 10 月各一次。",
+    "source_docs": ["文档七：培训与发展"]
+  },
+  {
+    "id": "Q21",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "我没休完的年假能留到明年吗？最多留几天，什么时候前要用掉？",
+    "reference": "年假原则上当年休完，最多可跨年结转 5 天，且须在次年 3 月 31 日前使用。",
+    "source_docs": ["文档四：薪酬与福利"]
+  },
+  {
+    "id": "Q22",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "要请休假的话，得提前几天在系统里提申请？生病临时请假可以吗？",
+    "reference": "请假须至少提前 3 个自然日在 OA 提交申请；病假可当日补交申请，但返岗后 2 个工作日内须补齐二级以上医院证明。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q23",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "同事出差回来才交发票，会不会报不了？",
+    "reference": "差旅结束后超过 7 个工作日提交报销单不符合制度；发票开具时间超过费用发生日期 30 天的，需财务总监书面批准。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q24",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "电脑用得太卡了，能申请换一台吗？",
+    "reference": "笔记本电脑使用满 3 年可申请更换；显示器、机械键盘等外设每人限领 1 套。",
+    "source_docs": ["文档六：IT 支持与办公设备"]
+  },
+  {
+    "id": "Q25",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "新人入职第一周要考什么试？没考过怎么办？",
+    "reference": "入职第一周须完成信息安全培训与考试，80 分及以上为通过；未通过须在 3 个工作日内补考。",
+    "source_docs": ["文档七：培训与发展"]
+  },
+  {
+    "id": "Q26",
+    "category": "paraphrase",
+    "difficulty": "medium",
+    "question": "报销单除了发票还要附什么材料？",
+    "reference": "报销单须附发票、行程单和出差申请单编号；无出差申请单编号的差旅费用不予报销。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q27",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "入职 2 年的专员去上海出差 2 天，按标准住宿费和市内交通费合计最多分别是多少？",
+    "reference": "上海属于一线城市，住宿上限每晚 600 元，2 天住宿费合计最多 1200 元；专员市内交通每日 80 元包干，2 天合计 160 元。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q28",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "请 4 天事假要谁来批？这种假给工资吗？",
+    "reference": "超过 3 天的请假须经直属主管、部门负责人和 HRBP 审批；事假不带薪，每年不超过 10 天，最小请假单位 0.5 天。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q29",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "入职满 6 年有多少天年假？刚进公司当年的年假怎么算？",
+    "reference": "入职满 5 年起年假为 10 天；年假按自然年计算，入职当年按剩余月份折算，不足 1 天部分舍去。",
+    "source_docs": ["文档一：考勤与休假制度", "文档四：薪酬与福利"]
+  },
+  {
+    "id": "Q30",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "出差时用微信把生产密钥发给同事合规吗？如果发现密钥泄露要多久内上报？",
+    "reference": "禁止通过即时通讯工具明文传输密钥，因此不合规；发现密钥泄露须 1 小时内报告信息安全部并立即吊销。",
+    "source_docs": ["文档五：信息安全与密钥管理"]
+  },
+  {
+    "id": "Q31",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "新人入职时没带离职证明会有什么后果？第一周还有什么培训要求？",
+    "reference": "未能提供离职证明者须在入职后 15 日内补交，逾期按试用期不符合录用条件处理；入职第一周须完成信息安全培训与考试，80 分及以上通过。",
+    "source_docs": ["文档三：入职与离职管理", "文档七：培训与发展"]
+  },
+  {
+    "id": "Q32",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "一笔 6000 元的差旅报销审批链是什么？批完后多久能收到钱？",
+    "reference": "单笔报销超过 5000 元须追加 CFO 审批，审批链为直属主管、财务审核、CFO、出纳付款；财务审核通过后 5 个工作日内到账。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q33",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "试用期第 30 天和第 90 天述职都评为待改进，会被辞退吗？这段时间工资怎么算？",
+    "reference": "试用期第 30、60、90 天进行三次述职，任意两次评为待改进即终止试用；试用期工资为转正工资的 80%，且不低于当地最低工资标准。",
+    "source_docs": ["文档三：入职与离职管理"]
+  },
+  {
+    "id": "Q34",
+    "category": "multi_hop",
+    "difficulty": "hard",
+    "question": "想请 2 天病假，OA 申请和医院证明有什么要求？",
+    "reference": "病假可当日补交 OA 申请，但须在返岗后 2 个工作日内补齐二级以上医院证明；病假最小请假单位为 1 天，每年不超过 15 天。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q35",
+    "category": "conditional",
+    "difficulty": "hard",
+    "question": "弹性打卡最晚几点上班？几点到几点必须在线？",
+    "reference": "上班可在 08:30—10:00 之间打卡，最晚 10:00 上班；核心工作时间 10:00—16:00 必须在线，满 8 小时即可下班。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q36",
+    "category": "conditional",
+    "difficulty": "medium",
+    "question": "这个月迟到了 4 次会有什么处理？",
+    "reference": "迟到超过 30 分钟须当日 12:00 前在 OA 提交说明，月度累计 3 次以上计入绩效。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q37",
+    "category": "conditional",
+    "difficulty": "medium",
+    "question": "加班换的调休多久不用就作废？每月最多能加班多少小时？",
+    "reference": "调休须在加班发生后 6 个月内使用，逾期作废；每月加班上限 36 小时，由直属主管监控。",
+    "source_docs": ["文档一：考勤与休假制度"]
+  },
+  {
+    "id": "Q38",
+    "category": "conditional",
+    "difficulty": "medium",
+    "question": "出差中途临时改行程没获批，多出来的钱谁出？临时订机票要谁审批？",
+    "reference": "未经批准变更行程产生的额外费用由个人承担；临时订票需部门负责人审批。",
+    "source_docs": ["文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q39",
+    "category": "conditional",
+    "difficulty": "medium",
+    "question": "培训完不交分享记录要自己掏钱吗？这类报销按什么制度执行？",
+    "reference": "培训后须在 15 日内提交分享会记录，否则费用自理；报销口径按员工手册第二章差旅与报销制度执行。",
+    "source_docs": ["文档七：培训与发展", "文档二：差旅与报销制度"]
+  },
+  {
+    "id": "Q40",
+    "category": "conditional",
+    "difficulty": "medium",
+    "question": "密码输错 5 次会怎样？核心系统还要开什么功能？",
+    "reference": "连续 5 次密码错误账号锁定 30 分钟；核心系统必须开启双因素认证（2FA）。",
+    "source_docs": ["文档五：信息安全与密钥管理"]
+  }
+]

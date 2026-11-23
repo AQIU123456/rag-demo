@@ -7,10 +7,14 @@
 
 ```
 rag-eval/
-├── evaluate_rag.py        # 评估主脚本
-├── requirements.txt       # Python 依赖
-├── sample_questions.json  # 示例问题集（question + reference）
-└── README.md              # 本文件
+├── evaluate_rag.py              # 评估主脚本
+├── chunk_metrics.py             # 分块专属指标脚本
+├── requirements.txt             # Python 依赖
+├── sample_questions.json        # 3 条冒烟样例（历史保留）
+├── testset_v1_corpus.md         # 测试集专用固定语料（7 篇文档，唯一事实来源）
+├── testset_v1.json              # 主测试集：40 条，question + reference + 元数据
+├── testset_v1_adversarial.json  # 补充集：10 条负例/注入/歧义/错误前提
+└── README.md                    # 本文件
 ```
 
 ## 评估指标（RAGAS 经典四指标）
@@ -152,8 +156,51 @@ python -u chunk_metrics.py --questions sample_questions.json \
 
 A/B 口径：对照组把 `application.yml` 的 `chunk.structure-aware / context-prefix / bm25-enabled`
 全置 `false`，实验组置 `true`，固定同一问题集跑两组；**判定规则**是实验组 `context_recall`
-不低于对照组、`faithfulness` 不下降，且重复块率/幽灵率为 0。当前 `sample_questions.json`
-只有 3 条，正式 A/B 前请按真实语料扩充到 ≥30 条（多章节、跨节、表格、精确数字）。
+不低于对照组、`faithfulness` 不下降，且重复块率/幽灵率为 0。正式 A/B 请用下方
+`testset_v1.json`（40 条，覆盖多章节、跨节、表格、精确数字），`sample_questions.json`
+仅保留作 3 条冒烟样例。
+
+## 测试集 v1（可直接跑）
+
+三份文件配套使用，`reference` 全部能在 `testset_v1_corpus.md` 中逐条定位：
+
+| 文件 | 内容 | 用途 |
+|---|---|---|
+| `testset_v1_corpus.md` | 7 篇虚构《星海科技员工手册》：考勤休假、差旅报销、入职离职、薪酬福利、信息安全、IT 支持、培训发展；含 6 张表格与大量精确数字 | 上传知识库，作为唯一 ground truth |
+| `testset_v1.json` | 40 条主测试题，每条带 `id / category / difficulty / source_docs` | RAGAS 四指标 + chunk 指标 |
+| `testset_v1_adversarial.json` | 10 条补充题：4 条知识库未覆盖、3 条注入/分隔符逃逸、2 条歧义、1 条错误前提 | 单独评估拒答率、忠实度、抗注入 |
+
+> Q17（8 小时 × 3 = 24 小时调休）、Q27（600×2=1200 元、80×2=160 元）的 reference
+> 含**由原文数字推导**的结果，语料中没有字面值，这是刻意设计来检验计算型问答；
+> 用字符 bigram 口径的 `chunk_recall` 会略偏低，属正常现象，以 RAGAS 语义指标为准。
+
+主测试集分布：
+
+| 类别 | 条数 | 考察点 |
+|---|---|---|
+| `single_hop` | 12 | 单条款直接问答 |
+| `table_numeric` | 8 | 表格行定位、职级/城市条件、精确数字与简单计算 |
+| `paraphrase` | 6 | 口语化同义改写，无原文关键词 |
+| `multi_hop` | 8 | 跨章节组合（如年假：额度在文档一、结转在文档四） |
+| `conditional` | 6 | 时间窗口、审批层级、阈值边界 |
+
+使用步骤：
+
+```bash
+# 1. 把 testset_v1_corpus.md 的「文档一」～「文档七」分别上传到知识库
+#    （标题取一级标题；这样 citations[].source 可定位到具体文档）
+# 2. 主测试集跑 RAGAS 四指标
+python -u evaluate_rag.py --questions testset_v1.json -o ragas_v1.csv
+# 3. 同题跑分块指标（A/B 时两组各跑一次，问题集必须一致）
+python -u chunk_metrics.py --questions testset_v1.json -o chunk_v1.csv
+# 4. 补充集单独跑：建议只看 faithfulness / answer_relevancy 与人工判定，
+#    不纳入 context_recall（未覆盖类问题的 reference 是「应拒答」）
+python -u evaluate_rag.py --questions testset_v1_adversarial.json \
+  --metrics faithfulness,answer_relevancy -o ragas_v1_adversarial.csv
+```
+
+注意：补充集里带 `expect=refuse / clarify / correct` 字段，评估脚本会忽略这些字段
+（只读取 `question` 与 `reference`），需按 `reference` 人工或另写断言判断行为是否正确。
 
 ## 注意
 
