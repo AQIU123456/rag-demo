@@ -2,6 +2,7 @@ package com.example.aichat.controller;
 
 import com.example.aichat.dto.ChatRequest;
 import com.example.aichat.dto.ChatResponse;
+import com.example.aichat.dto.RegenerateRequest;
 import com.example.aichat.dto.RagChatRequest;
 import com.example.aichat.dto.RagChatResponse;
 import com.example.aichat.dto.ReactChatRequest;
@@ -173,6 +174,45 @@ public class ChatController {
         }
     }
     
+    /**
+     * 重新生成（重试）：复用原问题重新生成回答，原地覆盖该会话最后一条 AI 记录。
+     * 不会重复插入 USER 消息，也不会新增对话气泡。
+     * POST /api/chat/regenerate
+     */
+    @PostMapping("/regenerate")
+    public ResponseEntity<ChatResponse> regenerate(@RequestBody RegenerateRequest request) {
+        String sessionId = request.getSessionId();
+        String question = request.getQuestion();
+        if (sessionId == null || sessionId.isEmpty()
+                || question == null || question.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String aiResponse = chatService.generateResponse(question);
+
+        ChatMessage lastAssistant = chatMessageRepository
+                .findFirstBySessionIdAndRoleOrderByCreatedAtDesc(
+                        sessionId, ChatMessage.MessageRole.ASSISTANT);
+        if (lastAssistant != null) {
+            lastAssistant.setContent(aiResponse);
+            lastAssistant.setCreatedAt(LocalDateTime.now());
+            chatMessageRepository.save(lastAssistant);
+        } else {
+            // 兜底：理论上不会出现，保证接口幂等可用
+            chatMessageRepository.save(ChatMessage.builder()
+                    .sessionId(sessionId)
+                    .content(aiResponse)
+                    .role(ChatMessage.MessageRole.ASSISTANT)
+                    .build());
+        }
+
+        return ResponseEntity.ok(ChatResponse.builder()
+                .sessionId(sessionId)
+                .message(aiResponse)
+                .timestamp(LocalDateTime.now())
+                .build());
+    }
+
     @GetMapping("/{sessionId}")
     public ResponseEntity<List<ChatMessage>> getChatHistory(@PathVariable String sessionId) {
         List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);

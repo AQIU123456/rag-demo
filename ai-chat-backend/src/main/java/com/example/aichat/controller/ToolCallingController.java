@@ -2,6 +2,7 @@ package com.example.aichat.controller;
 
 import com.example.aichat.dto.ChatRequest;
 import com.example.aichat.dto.ChatResponse;
+import com.example.aichat.dto.RegenerateRequest;
 import com.example.aichat.dto.ToolListResponse;
 import com.example.aichat.entity.ChatMessage;
 import com.example.aichat.repository.ChatMessageRepository;
@@ -82,6 +83,46 @@ public class ToolCallingController {
                 .build();
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 重新生成（重试）：复用原问题重新生成工具调用回答，
+     * 原地覆盖该会话最后一条 AI 记录，不重复插入 USER 消息。
+     * POST /api/chat/tools/regenerate
+     */
+    @PostMapping("/regenerate")
+    public ResponseEntity<ChatResponse> regenerate(@RequestBody RegenerateRequest request) {
+        String sessionId = request.getSessionId();
+        String question = request.getQuestion();
+        if (sessionId == null || sessionId.isEmpty()
+                || question == null || question.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        ToolCallingChatService.ChatResponseData responseData =
+                toolCallingChatService.chatWithToolsDetailed(question);
+
+        ChatMessage lastAssistant = chatMessageRepository
+                .findFirstBySessionIdAndRoleOrderByCreatedAtDesc(
+                        sessionId, ChatMessage.MessageRole.ASSISTANT);
+        if (lastAssistant != null) {
+            lastAssistant.setContent(responseData.getMessage());
+            lastAssistant.setCreatedAt(LocalDateTime.now());
+            chatMessageRepository.save(lastAssistant);
+        } else {
+            chatMessageRepository.save(ChatMessage.builder()
+                    .sessionId(sessionId)
+                    .content(responseData.getMessage())
+                    .role(ChatMessage.MessageRole.ASSISTANT)
+                    .build());
+        }
+
+        return ResponseEntity.ok(ChatResponse.builder()
+                .sessionId(sessionId)
+                .message(responseData.getMessage())
+                .timestamp(LocalDateTime.now())
+                .toolCalls(responseData.getToolCalls())
+                .build());
     }
 
     /**

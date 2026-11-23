@@ -111,6 +111,16 @@
                 </div>
               </div>
             </div>
+
+            <!-- 重试按钮：仅最后一条 AI 回答、非加载中时显示 -->
+            <button
+              v-if="index === messages.length - 1 && message.role === 'assistant' && !loading"
+              class="retry-btn"
+              :disabled="message.retrying"
+              @click="retryMessage(index)"
+            >
+              {{ message.retrying ? '重试中…' : '🔄 重试' }}
+            </button>
           </div>
         </div>
         
@@ -252,13 +262,15 @@ export default {
             }));
           }
           
-          // 添加 AI 回复消息
+          // 添加 AI 回复消息（记录原问题，供重试复用）
           this.messages.push({
             role: 'assistant',
             text: data.answer,
             reasoningSteps: reasoningSteps,
             formattedReasoning: data.formattedReasoning,
-            originalQuestion: data.originalQuestion
+            originalQuestion: data.originalQuestion,
+            question: userQuestion,
+            retrying: false
           });
           
           // 自动展开第一条消息的推理过程
@@ -282,6 +294,57 @@ export default {
       }
     },
     
+    /**
+     * 重试最后一条回答：复用原问题重新请求 /api/chat/react，
+     * 原地覆盖回答与推理过程，不新增对话气泡。
+     */
+    async retryMessage(index) {
+      const msg = this.messages[index];
+      if (!msg || !msg.question || msg.retrying || this.loading) return;
+
+      msg.retrying = true;
+      this.loading = true;
+      this.loadingText = '正在重新生成...';
+      try {
+        const response = await fetch('http://localhost:8080/api/chat/react', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            question: msg.question,
+            maxResults: this.maxResults,
+            showReasoning: this.showReasoning
+          })
+        });
+        const data = await response.json();
+        if (data.success) {
+          const reasoningSteps = (data.reasoningSteps || []).map(step => ({
+            type: step.type,
+            content: step.content,
+            actionName: step.actionName,
+            arguments: step.arguments,
+            result: step.result
+          }));
+          msg.text = data.answer;
+          msg.reasoningSteps = reasoningSteps;
+          msg.formattedReasoning = data.formattedReasoning;
+          msg.originalQuestion = data.originalQuestion;
+          this.expandedMessages.add(index);
+        } else {
+          msg.text = '抱歉，重试失败：' + (data.message || '未知错误');
+        }
+      } catch (error) {
+        console.error('ReAct 重试失败:', error);
+        msg.text = '抱歉，重试时发生错误：' + error.message;
+      } finally {
+        msg.retrying = false;
+        this.loading = false;
+        this.loadingText = '正在思考...';
+        this.scrollToBottom();
+      }
+    },
+
     useExample(example) {
       this.question = example;
     },
@@ -604,6 +667,29 @@ export default {
 
 .view-more-btn:hover {
   background: #5568d3;
+}
+
+.retry-btn {
+  margin-top: 10px;
+  padding: 5px 12px;
+  background: #f0f0f5;
+  color: #667eea;
+  border: 1px solid #e0e0ea;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .formatted-reasoning {

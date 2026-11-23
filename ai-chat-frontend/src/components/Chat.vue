@@ -13,6 +13,15 @@
         <!-- 用户消息保持纯文本；AI 回答按 Markdown 渲染 -->
         <div v-if="message.role === 'user'" class="message-content">{{ message.content }}</div>
         <div v-else class="message-content markdown-body" v-html="renderMarkdown(message.content)"></div>
+        <!-- 重试按钮：仅最后一条 AI 回答、非加载中时显示 -->
+        <button
+          v-if="index === messages.length - 1 && message.role === 'assistant' && !loading"
+          class="retry-btn"
+          :disabled="message.retrying"
+          @click="retryMessage(index)"
+        >
+          {{ message.retrying ? '重试中…' : '🔄 重试' }}
+        </button>
         <div class="message-time">{{ formatTime(message.createdAt) }}</div>
       </div>
       <div v-if="loading" class="message assistant">
@@ -83,7 +92,9 @@ export default {
         this.messages.push({
           role: 'assistant',
           content: response.data.message,
-          createdAt: response.data.timestamp
+          createdAt: response.data.timestamp,
+          question: message,
+          retrying: false
         })
       } catch (error) {
         console.error('Error sending message:', error)
@@ -98,14 +109,48 @@ export default {
       }
     },
     
+    /**
+     * 重试最后一条回答：调用 regenerate 端点原地覆盖，不新增用户消息/对话气泡。
+     */
+    async retryMessage(index) {
+      const msg = this.messages[index]
+      if (!msg || !msg.question || msg.retrying || this.loading) return
+
+      msg.retrying = true
+      this.loading = true
+      try {
+        const response = await axios.post('/api/chat/regenerate', {
+          sessionId: this.sessionId,
+          question: msg.question
+        })
+        msg.content = response.data.message
+        msg.createdAt = response.data.timestamp
+      } catch (error) {
+        console.error('重试失败:', error)
+        msg.content = '重试失败，请稍后再试。' + (error.response?.data?.message || '')
+      } finally {
+        msg.retrying = false
+        this.loading = false
+        this.scrollToBottom()
+      }
+    },
+
     async loadChatHistory() {
       try {
         const response = await axios.get(`/api/chat/${this.sessionId}`)
-        this.messages = response.data.map(msg => ({
-          role: msg.role.toLowerCase(),
-          content: msg.content,
-          createdAt: msg.createdAt
-        }))
+        let lastQuestion = ''
+        this.messages = response.data.map(msg => {
+          const role = msg.role.toLowerCase()
+          if (role === 'user') lastQuestion = msg.content
+          return {
+            role,
+            content: msg.content,
+            createdAt: msg.createdAt,
+            // AI 消息按其前一条用户消息补全 question，保证刷新后仍可重试
+            question: role === 'assistant' ? lastQuestion : undefined,
+            retrying: false
+          }
+        })
         this.scrollToBottom()
       } catch (error) {
         console.error('Error loading history:', error)
@@ -197,6 +242,29 @@ export default {
   color: #999;
   margin-top: 4px;
   padding: 0 8px;
+}
+
+.retry-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 5px 12px;
+  background: #f0f0f5;
+  color: #667eea;
+  border: 1px solid #e0e0ea;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .input-container {

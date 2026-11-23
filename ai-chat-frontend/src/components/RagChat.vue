@@ -20,6 +20,16 @@
             <!-- 用户消息保持纯文本；AI 回答按 Markdown 渲染 -->
             <div v-if="message.role === 'user'" class="message-text">{{ message.text }}</div>
             <div v-else class="message-text markdown-body" v-html="renderMarkdown(message.text)"></div>
+
+            <!-- 重试按钮：仅最后一条 AI 回答、非加载中时显示 -->
+            <button
+              v-if="index === messages.length - 1 && message.role === 'assistant' && !loading"
+              class="retry-btn"
+              :disabled="message.retrying"
+              @click="retryMessage(index)"
+            >
+              {{ message.retrying ? '重试中…' : '🔄 重试' }}
+            </button>
             
             <!-- RAG 引用来源展示 -->
             <div v-if="message.citations && message.citations.length > 0" class="citations-section">
@@ -140,11 +150,13 @@ export default {
         })
         
         if (response.data.success) {
-          // 添加 AI 回复
+          // 添加 AI 回复（记录原问题，供重试复用）
           this.messages.push({
             role: 'assistant',
             text: response.data.answer,
-            citations: response.data.citations || []
+            citations: response.data.citations || [],
+            question: userQuestion,
+            retrying: false
           })
         } else {
           // 错误处理
@@ -164,6 +176,33 @@ export default {
       }
     },
     
+    /**
+     * 重试最后一条回答：复用其原问题重新请求，原地覆盖回答内容，不新增对话气泡。
+     */
+    async retryMessage(index) {
+      const msg = this.messages[index]
+      if (!msg || !msg.question || msg.retrying || this.loading) return
+
+      msg.retrying = true
+      try {
+        const response = await axios.post('/api/chat/rag', {
+          question: msg.question,
+          maxResults: this.maxResults
+        })
+        if (response.data.success) {
+          msg.text = response.data.answer
+          msg.citations = response.data.citations || []
+        } else {
+          msg.text = '抱歉，重试失败：' + (response.data.message || '未知错误')
+        }
+      } catch (error) {
+        console.error('重试失败:', error)
+        msg.text = '抱歉，重试时发生错误：' + (error.response?.data?.message || error.message)
+      } finally {
+        msg.retrying = false
+      }
+    },
+
     askExample(question) {
       this.question = question
       this.sendQuestion()
@@ -319,6 +358,30 @@ export default {
   font-size: 11px;
   opacity: 0.6;
   font-style: italic;
+}
+
+/* 重试按钮 */
+.retry-btn {
+  margin-top: 10px;
+  padding: 5px 12px;
+  background: #f0f0f5;
+  color: #667eea;
+  border: 1px solid #e0e0ea;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 打字动画 */
