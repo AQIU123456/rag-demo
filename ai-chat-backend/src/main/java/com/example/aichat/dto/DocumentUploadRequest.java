@@ -33,4 +33,15 @@ public class DocumentUploadRequest {
      * 文件类型（如 txt、md）
      */
     private String fileType;
+
+    // ==================== 企业级上传元数据（可选，不破坏原调用方） ====================
+    private String originalFilename;
+    private String mimeType;
+    private String fileHash;
+    private String storagePath;
+    private String version;
+    private String source;
+    private String uploadedBy;
+    private String tenantId;
+    private String parseStatus;
 }

@@ -1,7 +1,14 @@
 server:
   port: 8080
+  # multipart 上传限制：与 upload.max-file-size 保持一致，网关层也要同步放开
+  tomcat:
+    max-swallow-size: -1
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 60MB
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -101,6 +108,21 @@ chunk:
   current-tenant: default
   current-acl-tag: public
   observability: true
+
+# 企业级上传配置（默认值见 UploadProperties，逐项可覆盖）
+upload:
+  max-file-size: 52428800        # 50MB
+  max-parsed-text-length: 200000
+  storage-root: data/uploads
+  magic-sniff-enabled: true
+  dedup-enabled: true
+  versioning-enabled: true
+  rate-limit-enabled: true
+  rate-limit-per-minute: 60
+  async-enabled: true
+  async-threshold-bytes: 2097152 # 2MB 以上走异步任务
+  virus-scanner: noop            # noop / clamav（预留）
+  virus-scan-block: true
 
 milvus:
   # 连接地址，URI + token 认证（token 形如 user:password）

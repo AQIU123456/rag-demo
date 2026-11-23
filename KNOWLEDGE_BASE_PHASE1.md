@@ -131,3 +131,53 @@ curl "http://localhost:8080/api/knowledge/search?keyword=测试&page=0&size=10"
 - 文档内容存储在数据库 TEXT 字段中
 - 搜索使用 SQL LIKE 模糊匹配（后续会升级为向量搜索）
 - 暂未实现用户权限控制
+
+---
+
+## 企业级上传改造（2026-11-23 已落地）
+
+> 原"阶段 2 扩展点：PDF/Word 多格式解析"已实现。原纯文本入口保留并更名为「快速录入」。
+
+### 新增能力（非侵入，原接口/原字段均不动）
+
+| 能力 | 实现 | 配置 / 接口 |
+|---|---|---|
+| 真实文件上传 | multipart + 本地存储 + 原文件可下载 | `POST /api/knowledge/upload/file` |
+| 多格式解析 | POI 5.2.5（Word/Excel/PPT）+ PDFBox 2.0.24（PDF），TXT/MD/JSON/XML/CSV 直读 | `DocumentParser` |
+| 类型安全 | 扩展名 + MIME + 魔数三重校验，白名单在 `UploadProperties` | `upload.*` |
+| 秒传去重 | 文件 sha256 命中直接返回既有文档 | `upload.dedup-enabled` |
+| 版本化 | 同名文件不同 hash 生成 v1/v2…，可回溯 | `upload.versioning-enabled` |
+| 异步 + 进度 | >2MB 走后台任务，轮询进度，失败可重试 | `GET/POST /api/knowledge/upload/tasks/...` |
+| 限流 | 固定窗口，按租户+用户维度 | `upload.rate-limit-per-minute` |
+| 病毒扫描 | 可插拔接口，默认 noop，预留 ClamAV | `upload.virus-scanner` |
+| 身份/审计 | 请求头 `X-Upload-User` / `X-Tenant-Id`，结构化审计日志 | `SECURITY-AUDIT-UPLOAD` |
+
+### 关键代码位置
+
+- 编排：`FileUploadService`（校验→去重→存储→解析→入库）；解析后的文本仍走既有
+  `KnowledgeDocumentService.uploadPlainText` → `scheduleIndex`，**分块/向量链路零改动**
+- 解析：`DocumentParser` / `FileTypeDetector`；存储：`FileStorageService`
+- 异步：`AsyncUploadExecutor`（守护线程池，@Lazy 打破循环依赖）
+- 配置：`UploadProperties` + `application.yml` 的 `upload.*`
+- 前端：`KnowledgeBase.vue` 上传弹窗改为「文件上传 / 快速录入」双模式，含拖拽与进度
+- SQL：`sql/20261123_upload_metadata.sql`（+ `_init.sql` / `_rollback.sql`）
+
+### 待执行 / 需配合
+
+- **DDL 未执行**：三个 SQL 脚本需在目标库执行（`ddl-auto: update` 只加列，不会建 `upload_task` 表与索引）
+- **API 冒烟未跑**：需 MySQL + 环境变量就绪后启动后端，按下方 curl 验证
+- **ClamAV**：当前为 noop 放行，生产环境须接入真实扫描服务并配置 `upload.virus-scanner=clamav`
+- **租户隔离检索**：仅记录字段与审计，检索期过滤开关沿用 `chunk.tenant-filter-enabled=false`，接真实身份体系后再打开
+
+```bash
+# 文件上传冒烟
+curl -X POST http://localhost:8080/api/knowledge/upload/file \
+  -H "X-Upload-User: zhangsan" -H "X-Tenant-Id: t1" \
+  -F "file=@/path/to/制度.pdf"
+# 轮询任务（异步时）
+curl "http://localhost:8080/api/knowledge/upload/tasks/{taskId}"
+```
+
+> **提醒 note**：本轮为实际代码改动，`mvn -o clean test` 结果 **39/39 BUILD SUCCESS**，`npm run build` 通过，
+> `mvn -o package` 产出 jar 成功。新增依赖 POI/PDFBox 均为离线仓库预置版本，未联网。所有 Java 改动以
+> `mvn -o clean test` 为唯一准绳；DDL 未执行，运行前需先跑 SQL 脚本。

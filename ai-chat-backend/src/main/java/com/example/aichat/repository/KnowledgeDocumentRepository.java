@@ -22,4 +22,13 @@ public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocu
     List<KnowledgeDocument> findByFileType(String fileType);
     
     List<KnowledgeDocument> findByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    /** 秒传去重：按文件 sha256 查已有文档（取最早一条，作为秒传命中目标） */
+    List<KnowledgeDocument> findByFileHashOrderByIdAsc(String fileHash);
+
+    /** 同 hash 多版本回溯 */
+    List<KnowledgeDocument> findByFileHashOrderByVersionDesc(String fileHash);
+
+    /** 版本链：按原始文件名查同一文档的各版本 */
+    List<KnowledgeDocument> findByOriginalFilenameOrderByVersionDesc(String originalFilename);
 }

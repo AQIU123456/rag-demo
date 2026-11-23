@@ -63,8 +63,45 @@ public class KnowledgeDocument {
     @Column(nullable = false)
     private Integer wordCount;
 
-    /**
-     * 创建时间
+    // ==================== 企业级上传元数据（非侵入式新增，均为可空） ====================
+
+    /** 原始文件名（保留用户上传时的名字，title 可能被清洗） */
+    @Column(length = 512)
+    private String originalFilename;
+
+    /** 真实 MIME 类型（由魔数嗅探得出，不信任扩展名） */
+    @Column(length = 128)
+    private String mimeType;
+
+    /** 文件 sha256（秒传去重 + 内容溯源） */
+    @Column(length = 64)
+    private String fileHash;
+
+    /** 原文件存储路径（相对 storage.root，支持重新解析/下载） */
+    @Column(length = 1024)
+    private String storagePath;
+
+    /** 文档版本（同 hash 多版本可回溯） */
+    @Column(length = 32)
+    private String version;
+
+    /** 上传来源：file-upload / quick-entry / api */
+    @Column(length = 32)
+    private String source;
+
+    /** 上传者（无身份上下文时为 anonymous） */
+    @Column(length = 128)
+    private String uploadedBy;
+
+    /** 租户 ID（无身份上下文时为 default） */
+    @Column(length = 64)
+    private String tenantId;
+
+    /** 解析状态：SUCCESS / FAILED / TEXT_ONLY */
+    @Column(length = 32)
+    private String parseStatus;
+
+    /** 创建时间
      */
     @Column(nullable = false)
     private LocalDateTime createdAt;

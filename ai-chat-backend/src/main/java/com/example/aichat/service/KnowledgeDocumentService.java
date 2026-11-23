@@ -31,6 +31,10 @@ public class KnowledgeDocumentService {
     /** 唯一索引编排器；三参构造场景下为 null，写路径自动降级为「只存文档、不建索引」 */
     private final ChunkIndexingService chunkIndexingService;
 
+    /** 文件存储：字段注入（非侵入，三参构造/回归测试直接 new 时为 null，删除时跳过原文件清理） */
+    @Autowired(required = false)
+    private FileStorageService fileStorageService;
+
     /**
      * 保留原三参构造签名（注入回归测试与外部调用方直接 new 的场景）。
      * 此时索引编排器为空，写路径优雅降级为「只保存文档、不建索引」。
@@ -88,6 +92,16 @@ public class KnowledgeDocumentService {
                 .fileType(request.getFileType() != null ? request.getFileType() : "txt")
                 .fileSize(fileSize)
                 .wordCount(wordCount)
+                // 企业级上传元数据：均为可选，缺省时给安全默认值，不影响原调用方
+                .originalFilename(request.getOriginalFilename())
+                .mimeType(request.getMimeType())
+                .fileHash(request.getFileHash())
+                .storagePath(request.getStoragePath())
+                .version(request.getVersion() != null ? request.getVersion() : "v1")
+                .source(request.getSource() != null ? request.getSource() : "quick-entry")
+                .uploadedBy(request.getUploadedBy() != null ? request.getUploadedBy() : "anonymous")
+                .tenantId(request.getTenantId() != null ? request.getTenantId() : "default")
+                .parseStatus(request.getParseStatus() != null ? request.getParseStatus() : "TEXT_ONLY")
                 .build();
         
         KnowledgeDocument saved = documentRepository.save(document);
@@ -388,14 +402,17 @@ public class KnowledgeDocumentService {
      * 删除文档
      */
     public void deleteDocument(Long id) {
-        if (!documentRepository.existsById(id)) {
-            throw new RuntimeException("文档不存在，ID: " + id);
-        }
+        KnowledgeDocument doc = documentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("文档不存在，ID: " + id));
         // 删除旧的分块记录
         chunkRepository.deleteByDocumentId(id);
         documentRepository.deleteById(id);
         // 删除闭环：提交后把该文档的全部向量 id 置入墓碑，检索侧立即不再召回（幽灵向量 = 0）
         scheduleRemove(id);
+        // 清理原文件（best-effort，字段注入缺失时跳过）
+        if (fileStorageService != null) {
+            fileStorageService.deleteQuietly(doc.getStoragePath());
+        }
     }
     
     /**
@@ -452,6 +469,14 @@ public class KnowledgeDocumentService {
                 .fileSize(document.getFileSize())
                 .wordCount(document.getWordCount())
                 .content(document.getContent())
+                .originalFilename(document.getOriginalFilename())
+                .mimeType(document.getMimeType())
+                .fileHash(document.getFileHash())
+                .version(document.getVersion())
+                .source(document.getSource())
+                .uploadedBy(document.getUploadedBy())
+                .tenantId(document.getTenantId())
+                .parseStatus(document.getParseStatus())
                 .createdAt(document.getCreatedAt())
                 .updatedAt(document.getUpdatedAt())
                 .build();

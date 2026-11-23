@@ -89,8 +89,64 @@
     <!-- 上传/编辑弹窗 -->
     <div v-if="showUploadModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal">
-        <h3>{{ editingDoc ? '编辑文档' : '上传纯文本文档' }}</h3>
-        
+        <h3>{{ editingDoc ? '编辑文档' : (uploadMode === 'file' ? '上传文档' : '新建文档') }}</h3>
+
+        <!-- 模式切换：新建文档时可选文件/手填；编辑时固定手填 -->
+        <div v-if="!editingDoc" class="mode-switch">
+          <button type="button" :class="['mode-btn', {active: uploadMode === 'file'}]" @click="uploadMode = 'file'">
+            文件上传
+          </button>
+          <button type="button" :class="['mode-btn', {active: uploadMode === 'manual'}]" @click="uploadMode = 'manual'">
+            快速录入（粘贴文本）
+          </button>
+        </div>
+
+        <!-- ========== 文件拖拽上传区 ========== -->
+        <div v-if="uploadMode === 'file' && !editingDoc" class="file-upload-zone">
+          <div
+            :class="['drop-area', {dragging: isDragging}]"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="onDrop"
+            @click="$refs.fileInput.click()"
+          >
+            <div class="drop-icon">⇪</div>
+            <p class="drop-title">拖拽文件到此处，或点击选择</p>
+            <p class="drop-hint">支持 PDF / Word / Excel / PPT / TXT / MD / JSON / XML，单文件 ≤ 50MB</p>
+            <input ref="fileInput" type="file" class="hidden-file-input" :accept="acceptedTypes" @change="onFileChange" />
+          </div>
+
+          <div v-if="selectedFile" class="selected-file">
+            <span class="file-name">{{ selectedFile.name }}</span>
+            <span class="file-size">{{ formatFileSize(selectedFile.size) }}</span>
+            <button type="button" class="file-clear" @click="clearSelectedFile">×</button>
+          </div>
+
+          <!-- 上传进度 -->
+          <div v-if="uploading" class="upload-progress">
+            <div class="progress-bar"><div class="progress-fill" :style="{width: uploadProgress + '%'}"></div></div>
+            <div class="progress-text">
+              <span>{{ uploadStage || '上传中...' }}</span>
+              <span>{{ uploadProgress }}%</span>
+            </div>
+          </div>
+
+          <!-- 秒传命中提示 -->
+          <div v-if="uploadResult && uploadResult.dedupHit" class="upload-notice success">
+            秒传命中：该文件已存在，已直接关联到文档「{{ uploadResult.document?.title }}」
+          </div>
+          <div v-if="uploadError" class="upload-notice error">{{ uploadError }}</div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeModal" class="cancel-btn">取消</button>
+            <button type="button" @click="submitFile" :disabled="uploading || !selectedFile" class="submit-btn">
+              {{ uploading ? '上传中...' : '开始上传' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- ========== 手填/编辑区（原逻辑保留，仅文案调整） ========== -->
+        <div v-else>
         <div class="form-group">
           <label>标题 *</label>
           <input v-model="formData.title" type="text" placeholder="请输入文档标题" />
@@ -124,8 +180,9 @@
         <div class="modal-actions">
           <button @click="closeModal" class="cancel-btn">取消</button>
           <button @click="submitForm" :disabled="submitting" class="submit-btn">
-            {{ submitting ? '提交中...' : (editingDoc ? '保存修改' : '上传') }}
+            {{ submitting ? '提交中...' : (editingDoc ? '保存修改' : '创建文档') }}
           </button>
+        </div>
         </div>
       </div>
     </div>
@@ -253,9 +310,21 @@ export default {
       searchMode: '', // 当前搜索模式：'keyword', 'semantic', 'hybrid'
       hybridResults: [], // 混合搜索结果
       showUploadModal: false,
+      uploadMode: 'file',        // 'file' 文件上传 | 'manual' 快速录入
       viewingDoc: null,
       editingDoc: null,
       submitting: false,
+      // 文件上传相关
+      selectedFile: null,
+      isDragging: false,
+      uploading: false,
+      uploadProgress: 0,
+      uploadStage: '',
+      uploadResult: null,
+      uploadError: '',
+      uploadTaskId: null,
+      pollTimer: null,
+      acceptedTypes: '.txt,.md,.markdown,.json,.xml,.csv,.log,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx',
       formData: {
         title: '',
         description: '',
@@ -413,12 +482,118 @@ export default {
     closeModal() {
       this.showUploadModal = false
       this.editingDoc = null
+      this.uploadMode = 'file'
+      this.clearSelectedFile()
+      this.uploadError = ''
+      this.uploadResult = null
+      this.uploadTaskId = null
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer)
+        this.pollTimer = null
+      }
       this.formData = {
         title: '',
         description: '',
         fileType: 'txt',
         content: ''
       }
+    },
+
+    // ========== 文件上传相关方法 ==========
+
+    onFileChange(event) {
+      const file = event.target.files && event.target.files[0]
+      if (file) this.selectFile(file)
+    },
+
+    onDrop(event) {
+      this.isDragging = false
+      const file = event.dataTransfer.files && event.dataTransfer.files[0]
+      if (file) this.selectFile(file)
+    },
+
+    selectFile(file) {
+      this.uploadError = ''
+      this.uploadResult = null
+      const maxSize = 50 * 1024 * 1024
+      if (file.size > maxSize) {
+        this.uploadError = '文件超过 50MB 上限，请压缩后重试'
+        return
+      }
+      this.selectedFile = file
+    },
+
+    clearSelectedFile() {
+      this.selectedFile = null
+      if (this.$refs.fileInput) this.$refs.fileInput.value = ''
+    },
+
+    async submitFile() {
+      if (!this.selectedFile) return
+      this.uploading = true
+      this.uploadProgress = 0
+      this.uploadStage = '上传中...'
+      this.uploadError = ''
+      this.uploadResult = null
+
+      const form = new FormData()
+      form.append('file', this.selectedFile)
+      try {
+        const response = await axios.post('/api/knowledge/upload/file', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            if (e.total) this.uploadProgress = Math.min(90, Math.round(e.loaded * 100 / e.total))
+          }
+        })
+        const result = response.data
+        if (result.async && result.taskId) {
+          // 异步任务：轮询进度
+          this.uploadTaskId = result.taskId
+          this.uploadStage = '后台解析中...'
+          this.pollTaskStatus(result.taskId)
+        } else {
+          this.uploadProgress = 100
+          this.uploadStage = '完成'
+          this.uploadResult = result
+          alert(result.dedupHit ? '秒传成功：文件已存在' : '上传成功')
+          this.closeModal()
+          this.loadDocuments()
+        }
+      } catch (error) {
+        this.uploadError = error.response?.data?.message || error.response?.data || '上传失败，请重试'
+        this.uploading = false
+      }
+    },
+
+    pollTaskStatus(taskId) {
+      if (this.pollTimer) clearInterval(this.pollTimer)
+      this.pollTimer = setInterval(async () => {
+        try {
+          const res = await axios.get(`/api/knowledge/upload/tasks/${taskId}`)
+          const task = res.data
+          this.uploadProgress = task.progress
+          this.uploadStage = task.stage || task.status
+          if (task.status === 'SUCCESS') {
+            clearInterval(this.pollTimer)
+            this.pollTimer = null
+            this.uploading = false
+            alert('上传并解析成功')
+            this.closeModal()
+            this.loadDocuments()
+          } else if (task.status === 'FAILED') {
+            clearInterval(this.pollTimer)
+            this.pollTimer = null
+            this.uploading = false
+            this.uploadError = '解析失败：' + (task.errorMessage || '未知原因')
+            this.retryAvailableTaskId = taskId
+          }
+        } catch (e) {
+          clearInterval(this.pollTimer)
+          this.pollTimer = null
+          this.uploading = false
+          this.uploadError = '查询任务状态失败'
+        }
+      }, 1000)
     },
 
     async submitForm() {
@@ -1295,5 +1470,123 @@ mark {
   color: #999;
   padding-top: 10px;
   border-top: 1px dashed #e0e0e0;
+}
+
+/* ========== 文件上传相关样式 ========== */
+.mode-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+.mode-btn {
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.mode-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+  font-weight: 500;
+}
+.drop-area {
+  border: 2px dashed #c8c8e0;
+  border-radius: 12px;
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fafaff;
+}
+.drop-area:hover, .drop-area.dragging {
+  border-color: #667eea;
+  background: #f0f7ff;
+}
+.drop-icon {
+  font-size: 40px;
+  color: #667eea;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.drop-title {
+  font-size: 15px;
+  color: #333;
+  margin: 0 0 8px;
+}
+.drop-hint {
+  font-size: 12px;
+  color: #999;
+  margin: 0;
+}
+.hidden-file-input {
+  display: none;
+}
+.selected-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+.file-name {
+  flex: 1;
+  font-size: 13px;
+  color: #333;
+  word-break: break-all;
+}
+.file-size {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+}
+.file-clear {
+  border: none;
+  background: transparent;
+  color: #999;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+.upload-progress {
+  margin-top: 14px;
+}
+.progress-bar {
+  height: 8px;
+  background: #e8e8e8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transition: width 0.3s;
+}
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
+}
+.upload-notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.upload-notice.success {
+  background: #e1f5ee;
+  color: #0f6e56;
+}
+.upload-notice.error {
+  background: #fcebeb;
+  color: #a32d2d;
 }
 </style>

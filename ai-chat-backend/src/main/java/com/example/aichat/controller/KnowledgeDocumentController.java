@@ -4,14 +4,24 @@ import com.example.aichat.dto.DocumentResponse;
 import com.example.aichat.dto.DocumentUploadRequest;
 import com.example.aichat.dto.HighlightRequest;
 import com.example.aichat.dto.HighlightResponse;
+import com.example.aichat.dto.TaskStatusResponse;
+import com.example.aichat.dto.UploadResponse;
 import com.example.aichat.service.EmbeddingService;
+import com.example.aichat.service.FileStorageService;
+import com.example.aichat.service.FileUploadService;
 import com.example.aichat.service.KnowledgeDocumentService;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Path;
 import java.util.List;
 
 @RestController
@@ -21,11 +31,17 @@ public class KnowledgeDocumentController {
 
     private final KnowledgeDocumentService documentService;
     private final EmbeddingService embeddingService;
+    private final FileUploadService fileUploadService;
+    private final FileStorageService fileStorageService;
 
     public KnowledgeDocumentController(KnowledgeDocumentService documentService,
-                                       EmbeddingService embeddingService) {
+                                       EmbeddingService embeddingService,
+                                       FileUploadService fileUploadService,
+                                       FileStorageService fileStorageService) {
         this.documentService = documentService;
         this.embeddingService = embeddingService;
+        this.fileUploadService = fileUploadService;
+        this.fileStorageService = fileStorageService;
     }
 
     /**
@@ -36,6 +52,51 @@ public class KnowledgeDocumentController {
     public ResponseEntity<DocumentResponse> uploadPlainText(@RequestBody DocumentUploadRequest request) {
         DocumentResponse response = documentService.uploadPlainText(request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 企业级文件上传（multipart）：校验 → 去重 → 存储 → 解析 → 入库 → 索引
+     * POST /api/knowledge/upload/file
+     */
+    @PostMapping(value = "/upload/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<UploadResponse> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestHeader(value = "X-Upload-User", defaultValue = "anonymous") String uploadedBy,
+            @RequestHeader(value = "X-Tenant-Id", defaultValue = "default") String tenantId) {
+        return ResponseEntity.ok(fileUploadService.upload(file, uploadedBy, tenantId));
+    }
+
+    /** 查询上传任务进度 GET /api/knowledge/upload/tasks/{taskId} */
+    @GetMapping("/upload/tasks/{taskId}")
+    public ResponseEntity<TaskStatusResponse> getTaskStatus(@PathVariable String taskId) {
+        return ResponseEntity.ok(fileUploadService.getTaskStatus(taskId));
+    }
+
+    /** 失败任务重试 POST /api/knowledge/upload/tasks/{taskId}/retry */
+    @PostMapping("/upload/tasks/{taskId}/retry")
+    public ResponseEntity<Void> retryTask(@PathVariable String taskId) {
+        fileUploadService.retryTask(taskId);
+        return ResponseEntity.ok().build();
+    }
+
+    /** 下载原文件 GET /api/knowledge/documents/{id}/download */
+    @GetMapping("/documents/{id}/download")
+    public ResponseEntity<Resource> downloadOriginal(@PathVariable Long id) {
+        FileUploadService.FileDownload dl = fileUploadService.download(id);
+        if (dl == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            Resource resource = new UrlResource(dl.path().toUri());
+            String mime = dl.mimeType() != null ? dl.mimeType() : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            String encodedName = java.net.URLEncoder.encode(dl.filename(), java.nio.charset.StandardCharsets.UTF_8);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(mime))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + encodedName + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     /**

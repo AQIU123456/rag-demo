@@ -51,6 +51,16 @@ public class DocumentResponse {
      */
     private String content;
 
+    // ==================== 企业级上传元数据（非侵入式新增） ====================
+    private String originalFilename;
+    private String mimeType;
+    private String fileHash;
+    private String version;
+    private String source;
+    private String uploadedBy;
+    private String tenantId;
+    private String parseStatus;
+
     /**
      * 创建时间
      */
