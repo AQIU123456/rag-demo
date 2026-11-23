@@ -8,6 +8,8 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class RagService {
+
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
 
     /** 生成模型（只负责按上下文作答，检索与切分在别处） */
     private final ChatLanguageModel chatLanguageModel;
@@ -142,7 +146,9 @@ public class RagService {
             Response<AiMessage> response = chatLanguageModel.generate(messages);
             return PromptInjectionGuard.guardOutput(response.content().text(), systemPrompt);
         } catch (Exception e) {
-            return "抱歉，生成答案时出现错误：" + e.getMessage();
+            // 完整异常只写服务端日志，不把后端实现细节暴露给用户
+            log.error("RAG 生成答案失败", e);
+            return "抱歉，回答生成失败，请稍后重试。";
         }
     }
 
